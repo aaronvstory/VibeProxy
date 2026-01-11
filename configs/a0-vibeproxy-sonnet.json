@@ -31,11 +31,11 @@
   "browser_model_rl_input": 0,
   "browser_model_rl_output": 0,
   "browser_model_kwargs": {
-    "temperature": "0.5"
+    "temperature": "0"
   },
   "api_keys": {
     "OPENAI_API_KEY": "dummy-not-used"
   },
   "_config_name": "VibeProxy (Claude Sonnet 4.5)",
-  "_description": "Claude Sonnet 4.5 for chat and browser, Haiku for utility. Best balance of speed and capability."
+  "_description": "Claude Sonnet 4.5 for chat and browser, Haiku for utility. Best balance of speed and capability. All models use temperature 0 for consistent, deterministic responses."
 }
