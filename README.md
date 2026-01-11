@@ -28,6 +28,7 @@ This directory contains everything you need:
 - **test-connection.ps1** - Verify tunnel is working
 
 ### Configuration
+- **vibeproxy-config.example.json** - Example config (copy to `vibeproxy-config.json` and edit)
 - **factory-config-example.json** - Copy to `~/.factory/config.json`
 
 ### Mac Scripts
@@ -42,7 +43,7 @@ This directory contains everything you need:
 4. Note your Mac's IP: `ipconfig getifaddr en0`
 
 ### On Windows (One-Time):
-1. Edit `vibeproxy-config.json` (preferred) or `ssh-tunnel-vibeproxy.ps1` with Mac IP
+1. Copy `vibeproxy-config.example.json` to `vibeproxy-config.json` and edit with your Mac's IP and username
 2. Configure Factory: Copy `factory-config-example.json` to `~/.factory/config.json`
 
 ### Daily Usage:

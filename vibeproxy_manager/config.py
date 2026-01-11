@@ -152,7 +152,9 @@ class ConfigManager:
             content = self.a0_settings_path.read_text(encoding="utf-8")
             backup_path.write_text(content, encoding="utf-8")
             return backup_path
-        except Exception:
+        except Exception as e:
+            # Log backup failure for debugging
+            print(f"Warning: Failed to backup A0 config: {e}")
             return None
 
     def apply_a0_config(self, config: A0Config) -> bool:
