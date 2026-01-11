@@ -63,6 +63,15 @@ class BrowseModelsScreen(Screen):
     async def on_mount(self) -> None:
         """Load models when screen mounts."""
         self.update_token_display()
+        # Check connection first
+        connected, msg = await self.app.api.test_connection()
+        if not connected:
+            self.notify(
+                f"Connection issue: {msg}",
+                title="⚠️ Tunnel Check",
+                severity="warning",
+                timeout=10
+            )
         await self.load_models()
 
     def update_token_display(self) -> None:
@@ -84,6 +93,18 @@ class BrowseModelsScreen(Screen):
             self.models = await self.app.api.list_models()
             self.refresh_list()
             self.notify(f"Loaded {len(self.models)} models", severity="information")
+        except ConnectionError as e:
+            error_msg = str(e)
+            if "refused" in error_msg.lower():
+                self.notify(
+                    "Is SSH tunnel running? Try: start-vibeproxy-tunnel.bat",
+                    title="Connection Refused",
+                    severity="error",
+                    timeout=15
+                )
+            else:
+                self.notify(f"Connection error: {error_msg}", severity="error")
+            self.models = []
         except Exception as e:
             self.notify(f"Failed to load models: {e}", severity="error")
             self.models = []
@@ -282,6 +303,11 @@ class BrowseModelsScreen(Screen):
         if not path:
             self.notify("Failed to create config", severity="error")
             return
+
+        # Backup existing config before applying
+        backup_path = self.app.config_manager.backup_a0_config()
+        if backup_path:
+            self.notify(f"Backup saved: {backup_path.name}", severity="information")
 
         # Build an A0Config object and apply it
         from ..models import A0Config

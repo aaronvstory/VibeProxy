@@ -139,6 +139,22 @@ class ConfigManager:
         except Exception:
             return None
 
+    def backup_a0_config(self) -> Optional[Path]:
+        """Create a backup of current A0 settings before modifying."""
+        if not self.a0_settings_path.exists():
+            return None
+        try:
+            from datetime import datetime
+            backup_dir = self.base_path / "configs" / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = backup_dir / f"settings_backup_{timestamp}.json"
+            content = self.a0_settings_path.read_text(encoding="utf-8")
+            backup_path.write_text(content, encoding="utf-8")
+            return backup_path
+        except Exception:
+            return None
+
     def apply_a0_config(self, config: A0Config) -> bool:
         """Copy a preset config to A0's settings location."""
         try:
