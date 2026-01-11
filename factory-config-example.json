@@ -1,0 +1,65 @@
+{
+  "custom_models": [
+    {
+      "model_display_name": "Claude Sonnet 4.5 (VibeProxy)",
+      "model": "claude-sonnet-4-5",
+      "base_url": "http://localhost:8317",
+      "api_key": "dummy-not-used",
+      "provider": "anthropic",
+      "notes": "Latest Claude model - best for complex reasoning"
+    },
+    {
+      "model_display_name": "Claude Opus 4.5 (VibeProxy)",
+      "model": "claude-opus-4-5",
+      "base_url": "http://localhost:8317",
+      "api_key": "dummy-not-used",
+      "provider": "anthropic",
+      "notes": "Most capable Claude model - use for hardest tasks"
+    },
+    {
+      "model_display_name": "Claude Haiku 4 (VibeProxy)",
+      "model": "claude-haiku-4",
+      "base_url": "http://localhost:8317",
+      "api_key": "dummy-not-used",
+      "provider": "anthropic",
+      "notes": "Fast and efficient - good for quick tasks"
+    },
+    {
+      "model_display_name": "GPT-5.1 Codex Max (VibeProxy)",
+      "model": "gpt-5.1-codex-max",
+      "base_url": "http://localhost:8317/v1",
+      "api_key": "dummy-not-used",
+      "provider": "openai",
+      "notes": "Best OpenAI coding model - superior deep reasoning"
+    },
+    {
+      "model_display_name": "GPT-4 Turbo (VibeProxy)",
+      "model": "gpt-4-turbo",
+      "base_url": "http://localhost:8317/v1",
+      "api_key": "dummy-not-used",
+      "provider": "openai",
+      "notes": "Balanced performance and speed"
+    },
+    {
+      "model_display_name": "GPT-4o (VibeProxy)",
+      "model": "gpt-4o",
+      "base_url": "http://localhost:8317/v1",
+      "api_key": "dummy-not-used",
+      "provider": "openai",
+      "notes": "Omni model - handles text, vision, audio"
+    }
+  ],
+  "_instructions": {
+    "1_where_to_save": "Save this as: C:\\Users\\YourName\\.factory\\config.json (or ~/.factory/config.json in Git Bash)",
+    "2_customize": "Remove models you don't need or add more from your VibeProxy providers",
+    "3_base_url_rules": {
+      "anthropic_models": "Use http://localhost:8317 (no /v1)",
+      "openai_models": "Use http://localhost:8317/v1 (with /v1)",
+      "gemini_models": "Use http://localhost:8317/v1 if authenticated in VibeProxy",
+      "qwen_models": "Use http://localhost:8317/v1 if authenticated in VibeProxy"
+    },
+    "4_api_key": "Always use 'dummy-not-used' - VibeProxy handles authentication via OAuth",
+    "5_tunnel_required": "Ensure ssh-tunnel-vibeproxy.ps1 is running before using Factory Droid!",
+    "6_verify_providers": "Check VibeProxy menu bar app on Mac - providers must show 'Connected ✅'"
+  }
+}

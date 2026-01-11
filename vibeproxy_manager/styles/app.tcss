@@ -1,0 +1,220 @@
+/* VibeProxy Manager - Textual CSS */
+
+/* Global Screen Styling */
+Screen {
+    background: $surface;
+}
+
+/* Headers */
+Header {
+    dock: top;
+    background: $primary;
+}
+
+Footer {
+    dock: bottom;
+}
+
+/* Status Bar */
+#status-bar {
+    dock: top;
+    height: 3;
+    background: $surface-darken-1;
+    border: solid $primary-darken-1;
+    padding: 0 1;
+}
+
+#status-container {
+    height: 100%;
+    layout: horizontal;
+}
+
+#status-container Static {
+    width: 1fr;
+    height: 100%;
+    content-align: center middle;
+    padding: 0 2;
+}
+
+/* Section Titles */
+.section-title {
+    text-align: center;
+    text-style: bold;
+    color: $text;
+    background: $primary-darken-2;
+    padding: 1;
+    margin: 1 0;
+}
+
+/* Main Container */
+#main-container {
+    width: 100%;
+    height: 100%;
+    padding: 1;
+}
+
+/* Menu Options */
+#menu-options {
+    height: auto;
+    max-height: 60%;
+    border: solid $primary;
+    padding: 1;
+    margin: 1 0;
+}
+
+#menu-options > .option-list--option-highlighted {
+    background: $accent;
+}
+
+#menu-title {
+    margin-bottom: 1;
+}
+
+/* Browse Container */
+#browse-container {
+    width: 100%;
+    height: 100%;
+    padding: 1;
+}
+
+/* Filter Bar */
+#filter-bar {
+    dock: top;
+    height: 3;
+    background: $surface-darken-1;
+    padding: 0 1;
+}
+
+#filter-bar Input {
+    width: 40%;
+}
+
+#filter-bar Static {
+    width: auto;
+    padding: 0 1;
+    content-align: center middle;
+}
+
+#filter-bar Switch {
+    width: auto;
+}
+
+#fav-label {
+    width: auto;
+    padding-left: 2;
+}
+
+#token-display {
+    width: 1fr;
+    text-align: right;
+    color: $text-muted;
+}
+
+/* Model List */
+#model-list {
+    height: 1fr;
+    border: solid $primary;
+    margin-top: 1;
+}
+
+#model-list > .selection-list--option-highlighted {
+    background: $accent;
+}
+
+#model-list > .selection-list--option-selected {
+    color: $success;
+}
+
+/* Loading Indicator */
+#loading {
+    width: 100%;
+    height: auto;
+    content-align: center middle;
+}
+
+/* Chat Container */
+#chat-container {
+    width: 100%;
+    height: 100%;
+    padding: 1;
+}
+
+#chat-header {
+    dock: top;
+    height: 3;
+    background: $primary;
+    text-align: center;
+    padding: 1;
+    text-style: bold;
+}
+
+#chat-log {
+    height: 1fr;
+    border: solid $primary;
+    margin: 1 0;
+    padding: 1;
+    background: $surface-darken-2;
+}
+
+#chat-status {
+    dock: bottom;
+    height: 1;
+    padding: 0 1;
+}
+
+#chat-input {
+    dock: bottom;
+    margin-top: 1;
+}
+
+/* Config Container */
+#config-container {
+    width: 100%;
+    height: 100%;
+    padding: 1;
+}
+
+#current-config {
+    text-align: center;
+    padding: 1;
+    margin-bottom: 1;
+}
+
+#config-options {
+    height: 1fr;
+    border: solid $primary;
+}
+
+#config-options > .option-list--option-highlighted {
+    background: $accent;
+}
+
+/* Status Container */
+#status-container {
+    width: 100%;
+    height: 100%;
+    padding: 1;
+}
+
+#status-log {
+    height: 1fr;
+    border: solid $primary;
+    margin: 1 0;
+    padding: 1;
+    background: $surface-darken-2;
+}
+
+#status-buttons {
+    dock: bottom;
+    height: 3;
+    align: center middle;
+}
+
+#status-buttons Button {
+    margin: 0 1;
+}
+
+/* Button Variants */
+Button.warning {
+    background: $warning;
+}

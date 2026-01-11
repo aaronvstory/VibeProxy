@@ -1,0 +1,6 @@
+{
+  "SSHPassword": "e27h",
+  "DisabledModels": [
+    "gemini-3-pro"
+  ]
+}

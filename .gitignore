@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.env
+
+# Temp files
+.tmp_*
+*.log
+*.tmp
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config backups with timestamps and secrets (keep templates only)
+configs/backups/
+configs/a0-backup-*.json
+
+# Serena cache
+.serena/__pycache__/
