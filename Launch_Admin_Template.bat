@@ -10,7 +10,7 @@ if %errorlevel% == 0 goto :admin
 
 REM Not admin - relaunch with elevation
 echo Requesting administrator privileges...
-powershell -Command "Start-Process cmd -ArgumentList '/c %~f0' -Verb RunAs"
+powershell -Command "Start-Process cmd -ArgumentList '/c \"\"%~f0\"\"' -Verb RunAs"
 exit /b
 
 :admin

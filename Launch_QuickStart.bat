@@ -11,7 +11,7 @@ cd /d "%~dp0"
 
 REM Check if tunnel is already running
 echo [1/3] Checking SSH tunnel status...
-powershell -Command "$tunnel = Get-Process | Where-Object {$_.CommandLine -like '*ssh*8317*'}; if ($tunnel) { Write-Host '   Tunnel already running (PID: ' $tunnel.Id ')' -ForegroundColor Green; exit 0 } else { exit 1 }"
+powershell -Command "try { $tunnel = Get-Process | Where-Object {$_.CommandLine -like '*ssh*8317*'} -ErrorAction SilentlyContinue; if ($tunnel) { Write-Host '   Tunnel already running (PID: ' $tunnel.Id ')' -ForegroundColor Green; exit 0 } else { exit 1 } } catch { exit 1 }"
 if %errorlevel% == 0 goto :start_tui
 
 REM Start tunnel in background
