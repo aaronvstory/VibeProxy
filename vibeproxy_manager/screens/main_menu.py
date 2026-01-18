@@ -16,12 +16,12 @@ class MainMenuScreen(Screen):
 
     BINDINGS = [
         Binding("1", "select_tunnel", "Tunnel", show=False),
-        Binding("2", "select_config", "Config", show=False),
-        Binding("3", "select_test", "Test", show=False),
-        Binding("4", "select_browse", "Browse", show=False),
-        Binding("5", "select_restart", "Restart", show=False),
-        Binding("6", "select_verify", "Verify", show=False),
-        Binding("7", "select_help", "Help", show=False),
+        Binding("2", "select_network", "Network", show=False),
+        Binding("3", "select_config", "Config", show=False),
+        Binding("4", "select_test", "Test", show=False),
+        Binding("5", "select_browse", "Browse", show=False),
+        Binding("6", "select_restart", "Restart", show=False),
+        Binding("7", "select_verify", "Verify", show=False),
         Binding("?", "select_help", "Help", show=False),
         Binding("q", "app.quit", "Quit"),
     ]
@@ -34,6 +34,7 @@ class MainMenuScreen(Screen):
             yield Static("Main Menu", id="menu-title", classes="section-title")
             yield OptionList(
                 Option("🔌 Start SSH Tunnel", id="tunnel"),
+                Option("🌐 Network Settings", id="network"),
                 Option("⚙️  Switch A0 Config", id="config"),
                 Option("🧪 Test VibeProxy", id="test"),
                 Option("📋 Browse Models", id="browse"),
@@ -55,6 +56,8 @@ class MainMenuScreen(Screen):
 
         if option_id == "tunnel":
             self.action_select_tunnel()
+        elif option_id == "network":
+            self.action_select_network()
         elif option_id == "config":
             self.action_select_config()
         elif option_id == "test":
@@ -69,23 +72,43 @@ class MainMenuScreen(Screen):
             self.action_select_help()
 
     def action_select_tunnel(self) -> None:
-        """Start/stop SSH tunnel."""
+        """Start SSH tunnel in a new terminal window."""
         tunnel = self.app.tunnel
 
         if tunnel.is_running():
             self.notify("Tunnel already running", title="SSH Tunnel")
         else:
-            success, msg = tunnel.start()
+            # Use the new window-based launcher (matches CLI behavior)
+            success, msg = tunnel.start_in_window()
             if success:
-                self.notify(msg, title="SSH Tunnel", severity="information")
-                # Refresh status bar
-                status_bar = self.query_one("#status-bar", StatusBar)
-                status_bar.refresh_status()
+                self.notify(
+                    "🚀 Tunnel launcher started!\n\n"
+                    "A new terminal window has opened with:\n"
+                    "  • Auto-reconnect on connection drop\n"
+                    "  • Password auto-login (saved in config)\n"
+                    "  • Live connection status\n\n"
+                    "Keep that window open while using VibeProxy!",
+                    title="SSH Tunnel",
+                    severity="information",
+                    timeout=15
+                )
+                # Refresh status bar after brief delay
+                import asyncio
+                async def delayed_refresh():
+                    await asyncio.sleep(3)  # Wait for tunnel to establish
+                    status_bar = self.query_one("#status-bar", StatusBar)
+                    status_bar.refresh_status()
+                self.app.call_later(lambda: asyncio.create_task(delayed_refresh()))
             else:
                 self.notify(msg, title="SSH Tunnel Failed", severity="error")
-                # Show manual command
+                # Show manual command as fallback
                 cmd = tunnel.start_in_terminal()
-                self.notify(f"Try: {cmd}", title="Manual Command", timeout=10)
+                self.notify(f"Try manually: {cmd}", title="Manual Command", timeout=10)
+
+    def action_select_network(self) -> None:
+        """Open network settings."""
+        from .network_settings import NetworkSettingsScreen
+        self.app.push_screen(NetworkSettingsScreen())
 
     def action_select_config(self) -> None:
         """Switch A0 configuration."""

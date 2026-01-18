@@ -1,0 +1,102 @@
+{
+  "analysis_date": "2026-01-11",
+  "tool": "Manual Analysis (gh copilot not available)",
+  "files_analyzed": [
+    "vibeproxy_manager/api.py",
+    "vibeproxy_manager/screens/browse_models.py",
+    "vibeproxy_manager/widgets/status_bar.py"
+  ],
+  "findings": [
+    {
+      "severity": "HIGH",
+      "title": "No model list caching - API hit on every screen mount",
+      "details": "BrowseModelsScreen.on_mount() calls load_models() which fetches from API every time the screen is mounted. Navigating away and back causes redundant API calls.",
+      "file": "vibeproxy_manager/screens/browse_models.py",
+      "line": 64,
+      "recommendation": "Implement TTL-based caching in VibeProxyClient.list_models() or cache at app level. Example: cache models for 60 seconds with timestamp check."
+    },
+    {
+      "severity": "HIGH",
+      "title": "60-second default timeout blocks UI during chat",
+      "details": "VibeProxyClient uses httpx.Timeout(60.0, connect=10.0) which can freeze the UI for up to 60 seconds if a model is slow or unresponsive. The 60s timeout is applied to all requests including chat completions.",
+      "file": "vibeproxy_manager/api.py",
+      "line": 22,
+      "recommendation": "Use streaming responses for chat completions, or implement user-cancellable requests with shorter read timeouts and progress indicators."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "Status bar polling every 5 seconds is inefficient",
+      "details": "StatusBar.on_mount() sets set_interval(5.0, self.refresh_status) which polls tunnel and Docker status every 5 seconds regardless of user activity. This creates constant background work.",
+      "file": "vibeproxy_manager/widgets/status_bar.py",
+      "line": 26,
+      "recommendation": "Use event-driven updates instead of polling. Only refresh on user action or increase interval to 15-30 seconds. Alternatively, refresh only when status bar is visible."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "Synchronous status checks in refresh_status may block event loop",
+      "details": "refresh_status() is not async but calls app.tunnel.get_status() and app.docker.get_status() which may perform blocking I/O. This runs on the main thread via set_interval.",
+      "file": "vibeproxy_manager/widgets/status_bar.py",
+      "line": 45,
+      "recommendation": "Make refresh_status async and use run_worker() or call_later() with proper async handling. Check if get_status() methods are blocking and convert to async."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "HTTP client not closed on app shutdown",
+      "details": "VibeProxyClient has close() method but no guarantee it's called. AsyncClient should be properly closed to release connections.",
+      "file": "vibeproxy_manager/api.py",
+      "line": 28,
+      "recommendation": "Implement context manager protocol (__aenter__/__aexit__) or ensure close() is called in app shutdown hook."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "Missing timeout on preflight test",
+      "details": "preflight() method calls self.chat() which uses the 60-second default timeout. Model test could hang for a full minute before failing.",
+      "file": "vibeproxy_manager/api.py",
+      "line": 116,
+      "recommendation": "Pass shorter timeout (e.g., 15 seconds) to preflight requests. Consider adding timeout parameter to chat() method."
+    },
+    {
+      "severity": "LOW",
+      "title": "Broad exception catching hides specific errors",
+      "details": "Multiple except Exception blocks in api.py catch all exceptions, making debugging difficult. Specific errors like JSONDecodeError, httpx.TimeoutException are not handled distinctly.",
+      "file": "vibeproxy_manager/api.py",
+      "line": 40,
+      "recommendation": "Catch specific exceptions (httpx.HTTPStatusError, httpx.TimeoutException, httpx.ConnectError, json.JSONDecodeError) before generic Exception fallback."
+    },
+    {
+      "severity": "LOW",
+      "title": "SelectionList refresh clears and rebuilds entire list",
+      "details": "refresh_list() calls model_list.clear_options() then rebuilds everything. For large model lists, this causes UI flicker and loses scroll position.",
+      "file": "vibeproxy_manager/screens/browse_models.py",
+      "line": 105,
+      "recommendation": "Consider differential updates - only add/remove changed items. Or preserve scroll position after refresh."
+    },
+    {
+      "severity": "LOW",
+      "title": "Duplicate connection test on screen mount",
+      "details": "on_mount() calls test_connection() AND load_models() which both hit /v1/models endpoint. This is redundant.",
+      "file": "vibeproxy_manager/screens/browse_models.py",
+      "line": 65,
+      "recommendation": "Remove separate test_connection() call since load_models() will reveal connection issues anyway, or combine into single check."
+    },
+    {
+      "severity": "LOW",
+      "title": "Missing error handling for config_manager operations",
+      "details": "action_favorite(), action_pick(), etc. call config_manager methods without try/except. File I/O errors could crash the action.",
+      "file": "vibeproxy_manager/screens/browse_models.py",
+      "line": 201,
+      "recommendation": "Wrap config_manager calls in try/except and show user-friendly error notifications."
+    }
+  ],
+  "summary": {
+    "high": 2,
+    "medium": 4,
+    "low": 4,
+    "total": 10,
+    "top_priority": [
+      "Add model list caching with TTL",
+      "Implement streaming or cancellable chat requests",
+      "Convert status bar to async with longer polling interval"
+    ]
+  }
+}

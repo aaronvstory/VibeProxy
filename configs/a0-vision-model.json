@@ -1,0 +1,9 @@
+{
+  "chat": {
+    "model": "vision-model",
+    "api_base": "http://host.docker.internal:8317/v1"
+  },
+  "chat_model_kwargs": {
+    "temperature": "0"
+  }
+}

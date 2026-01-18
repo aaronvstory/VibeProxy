@@ -40,6 +40,7 @@ class BrowseModelsScreen(Screen):
         self.search_filter: str = ""
         self.favorites_only: bool = False
         self.loading: bool = True
+        self._search_debounce_timer = None  # Timer for search debouncing
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -80,8 +81,12 @@ class BrowseModelsScreen(Screen):
         display = self.query_one("#token-display", Static)
         display.update(f"Max: {tokens} tokens")
 
-    async def load_models(self) -> None:
-        """Load models from API."""
+    async def load_models(self, force_refresh: bool = False) -> None:
+        """Load models from API.
+
+        Args:
+            force_refresh: If True, bypass cache (used when user presses R to refresh).
+        """
         self.loading = True
         loading = self.query_one("#loading", LoadingIndicator)
         loading.display = True
@@ -90,7 +95,7 @@ class BrowseModelsScreen(Screen):
         model_list.display = False
 
         try:
-            self.models = await self.app.api.list_models()
+            self.models = await self.app.api.list_models(force_refresh=force_refresh)
             self.refresh_list()
             self.notify(f"Loaded {len(self.models)} models", severity="information")
         except ConnectionError as e:
@@ -177,10 +182,14 @@ class BrowseModelsScreen(Screen):
                 model_list.add_option(Selection(label, model.id))
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Handle search input changes."""
+        """Handle search input changes with debouncing (300ms delay)."""
         if event.input.id == "search-input":
             self.search_filter = event.value
-            self.refresh_list()
+            # Cancel any pending debounce timer
+            if self._search_debounce_timer:
+                self._search_debounce_timer.stop()
+            # Set new debounce timer (300ms delay to avoid lag while typing)
+            self._search_debounce_timer = self.set_timer(0.3, self.refresh_list)
 
     def on_switch_changed(self, event: Switch.Changed) -> None:
         """Handle favorites switch toggle."""
@@ -288,8 +297,9 @@ class BrowseModelsScreen(Screen):
         switch.value = not switch.value
 
     async def action_refresh(self) -> None:
-        """Refresh model list from API."""
-        await self.load_models()
+        """Refresh model list from API (bypasses cache)."""
+        self.notify("Refreshing model list...", severity="information")
+        await self.load_models(force_refresh=True)
 
     def action_apply_a0(self) -> None:
         """Create and immediately apply A0 config for selected model."""

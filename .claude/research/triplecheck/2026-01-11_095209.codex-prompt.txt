@@ -1,0 +1,11 @@
+Review this PowerShell TUI code diff for:
+1. Logic correctness & edge cases
+2. Error handling completeness
+3. Type/null-safety in PowerShell
+4. Architectural consistency
+5. Resource cleanup
+6. Variable scoping issues
+7. API response handling
+
+OUTPUT: JSON array in ```json block. Each item: {severity: 'CRITICAL|HIGH|MEDIUM|LOW', title, details, file, line, recommendation}
+Then a short summary.

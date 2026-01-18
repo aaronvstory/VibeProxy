@@ -1,0 +1,53 @@
+# Gemini Code Review: VibeProxy Python TUI
+# Date: 2026-01-11
+# Analyzed files:
+# - vibeproxy_manager/api.py
+# - vibeproxy_manager/screens/browse_models.py
+# - vibeproxy_manager/widgets/status_bar.py
+
+## JSON Review Results:
+
+[
+  {
+    "severity": "HIGH",
+    "title": "Synchronous Blocking Calls in Event Loop",
+    "details": "The `refresh_status` method is synchronous but calls `get_status` on tunnel and docker components. If these perform system I/O (like subprocess calls), they will block the main UI thread every 5 seconds, causing interface stutter.",
+    "file": "vibeproxy_manager/widgets/status_bar.py",
+    "line": 65,
+    "recommendation": "Convert `refresh_status` to `async def` and `await` the status checks. Ensure `get_status` implementations are non-blocking or use `run_in_executor`."
+  },
+  {
+    "severity": "MEDIUM",
+    "title": "Missing Search Input Debouncing",
+    "details": "`on_input_changed` calls `refresh_list` immediately on every keystroke. With large model lists, the filtering and widget rebuilding overhead will cause typing lag.",
+    "file": "vibeproxy_manager/screens/browse_models.py",
+    "line": 139,
+    "recommendation": "Implement a debounce pattern using `self.set_timer` to delay list refreshing (e.g., 300ms) until typing stops."
+  },
+  {
+    "severity": "LOW",
+    "title": "Inefficient API Usage (No Caching)",
+    "details": "`list_models` fetches data from the network on every invocation without caching. Navigating back to the screen triggers unnecessary network requests.",
+    "file": "vibeproxy_manager/api.py",
+    "line": 43,
+    "recommendation": "Implement a short-lived memory cache (TTL) for `list_models` to serve recent data instantly and reduce API load."
+  },
+  {
+    "severity": "LOW",
+    "title": "Potential DOM Thrashing",
+    "details": "`refresh_list` iterates through models adding them one by one to the `SelectionList`. This can be slow for large lists.",
+    "file": "vibeproxy_manager/screens/browse_models.py",
+    "line": 126,
+    "recommendation": "Use bulk addition methods if available or verify performance with 1000+ items."
+  }
+]
+
+## Summary:
+- 1 HIGH severity issue (blocking calls in status bar refresh)
+- 1 MEDIUM severity issue (no search debouncing)
+- 2 LOW severity issues (no API caching, DOM thrashing)
+
+## Known Issues Confirmed:
+- No model list caching - CONFIRMED (api.py line 43)
+- Status bar polling issues - CONFIRMED (status_bar.py line 65, blocking calls)
+- Long timeouts can block UI - Related to HIGH severity blocking issue

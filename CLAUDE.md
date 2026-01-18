@@ -128,7 +128,7 @@ run.bat
 **Features:**
 - Browse all available models with search/filter
 - Interactive chat mode with any model
-- SSH tunnel management
+- **SSH tunnel launcher** - Opens in new window with auto-reconnect & password storage
 - A0 config switching
 - Favorites and max_tokens settings
 
@@ -178,7 +178,32 @@ Working directory: /a0/claude/email-management-tool-2-main
 Check the current state of the project, try running it...
 ```
 
-## Troubleshooting
+## SSH Tunnel Management
+
+### TUI Tunnel Launcher (NEW)
+
+The TUI now launches the SSH tunnel in a **new terminal window** (same as CLI launcher) with:
+
+- ✅ **Auto-reconnect** on connection drop
+- ✅ **Password auto-login** (saved in `vibeproxy-config.json`)
+- ✅ **Live connection status** with timestamps
+- ✅ **Auto-recovery** from network interruptions
+- ✅ **Visible debugging** - you can see what's happening!
+
+**How to use:**
+1. From TUI Main Menu → Select "🔌 Start SSH Tunnel" (option 1)
+2. A new PowerShell window opens automatically
+3. **First time only:** Enter your SSH password when prompted
+4. Password is saved and auto-used for future connections
+5. Keep the tunnel window open while using VibeProxy
+
+**Password Storage:**
+- Stored in `vibeproxy-config.json` under `SSHPassword` field
+- **Security note:** Password is plain text (same as CLI launcher)
+- To change password: delete the `SSHPassword` field and restart tunnel
+- To use SSH keys instead: set up key-based auth on Mac and leave password blank
+
+**Troubleshooting:**
 
 ### SSH Tunnel Issues
 
@@ -189,11 +214,11 @@ Check the current state of the project, try running it...
    ```powershell
    netstat -an | findstr 8317
    ```
-2. Restart the tunnel:
-   ```powershell
-   ./ssh-tunnel-vibeproxy.ps1
-   ```
-3. Verify Mac VibeProxy is running:
+2. Look at the tunnel window for errors (new window-based launcher shows live status)
+3. If tunnel window shows password errors:
+   - Delete `SSHPassword` from `vibeproxy-config.json`
+   - Restart tunnel from TUI
+4. Verify Mac VibeProxy is running:
    ```bash
    ssh your-mac "curl -s http://localhost:8317/v1/models"
    ```
