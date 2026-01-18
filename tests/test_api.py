@@ -18,7 +18,10 @@ def test_find_ssh_returns_path():
     """Test that find_ssh finds an SSH executable on Windows."""
     ssh_path = find_ssh()
     # Should find SSH on Windows with Git or OpenSSH installed
-    assert ssh_path is not None or ssh_path is None  # May not have SSH
+    if ssh_path is not None:
+        assert isinstance(ssh_path, str), "SSH path should be a string"
+        assert len(ssh_path) > 0, "SSH path should not be empty"
+    # If None, SSH not found - that's acceptable, just skip further checks
 
 
 def test_vibeproxy_client_init():
