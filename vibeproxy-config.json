@@ -1,7 +1,5 @@
 {
-  "SSHPassword": "e27h",
-  "MacIP": "192.168.50.166",
-  "DisabledModels": [
-    "gemini-3-pro"
-  ]
+  "SSHPassword": "",
+  "MacIP": "192.168.50.70",
+  "DisabledModels": []
 }

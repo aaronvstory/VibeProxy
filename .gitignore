@@ -30,3 +30,4 @@ configs/a0-backup-*.json
 
 # Serena cache
 .serena/__pycache__/
+vibeproxy-config.json

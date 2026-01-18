@@ -147,14 +147,16 @@ class ConfigManager:
             from datetime import datetime
             backup_dir = self.base_path / "configs" / "backups"
             backup_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Include microseconds to prevent collisions from rapid backups
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             backup_path = backup_dir / f"settings_backup_{timestamp}.json"
             content = self.a0_settings_path.read_text(encoding="utf-8")
             backup_path.write_text(content, encoding="utf-8")
             return backup_path
         except Exception as e:
-            # Log backup failure for debugging
-            print(f"Warning: Failed to backup A0 config: {e}")
+            # Log backup failure for debugging (caller should notify user)
+            import sys
+            print(f"Warning: Failed to backup A0 config: {e}", file=sys.stderr)
             return None
 
     def apply_a0_config(self, config: A0Config) -> bool:

@@ -65,7 +65,7 @@ class VibeProxyClient:
 
         try:
             client = await self._get_client()
-            # Use shorter timeout for model list (2s) to avoid blocking UI
+            # Use shorter timeout for model list (5s) to avoid blocking UI
             response = await client.get("/v1/models", timeout=5.0)
             response.raise_for_status()
             data = response.json()
