@@ -1,41 +1,41 @@
 {
   "version": "v0.9.7-10",
   "chat_model_provider": "other",
-  "chat_model_name": "gemini-3-pro",
+  "chat_model_name": "claude-sonnet-4-5-20251101",
   "chat_model_api_base": "http://host.docker.internal:8317/v1",
   "chat_model_kwargs": {
     "temperature": "0"
   },
-  "chat_model_ctx_length": 1000000,
+  "chat_model_ctx_length": 200000,
   "chat_model_ctx_history": 0.7,
   "chat_model_vision": true,
   "chat_model_rl_requests": 0,
   "chat_model_rl_input": 0,
   "chat_model_rl_output": 0,
   "util_model_provider": "other",
-  "util_model_name": "gemini-3-pro",
+  "util_model_name": "claude-haiku-4-5-20251001",
   "util_model_api_base": "http://host.docker.internal:8317/v1",
-  "util_model_ctx_length": 1000000,
+  "util_model_ctx_length": 200000,
   "util_model_ctx_input": 0.7,
   "util_model_kwargs": {
-    "temperature": "1"
+    "temperature": "0"
   },
   "util_model_rl_requests": 0,
   "util_model_rl_input": 0,
   "util_model_rl_output": 0,
   "browser_model_provider": "other",
-  "browser_model_name": "gemini-3-pro",
+  "browser_model_name": "claude-sonnet-4-5-20251101",
   "browser_model_api_base": "http://host.docker.internal:8317/v1",
   "browser_model_vision": true,
   "browser_model_rl_requests": 0,
   "browser_model_rl_input": 0,
   "browser_model_rl_output": 0,
   "browser_model_kwargs": {
-    "temperature": "1"
+    "temperature": "0"
   },
   "api_keys": {
     "OPENAI_API_KEY": "dummy-not-used"
   },
-  "_config_name": "VibeProxy (gemini-3-pro)",
-  "_description": "Gemini 3 Pro for all models. 1M context window, excellent for large codebases."
+  "_config_name": "VibeProxy (Claude Sonnet 4.5)",
+  "_description": "Claude Sonnet 4.5 for chat and browser, Haiku for utility. Best balance of speed and capability. All models use temperature 0 for consistent, deterministic responses."
 }

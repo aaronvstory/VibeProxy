@@ -1,9 +1,15 @@
 """Status bar widget showing tunnel, A0, and config status."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from textual.widgets import Static
 from textual.reactive import reactive
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+
+
+# Thread pool for running blocking I/O without blocking the UI
+_status_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="status_check")
 
 
 class StatusBar(Static):
@@ -23,10 +29,14 @@ class StatusBar(Static):
     def on_mount(self) -> None:
         """Initialize and start status updates."""
         self.update_display()
-        # Set up periodic refresh
-        self.set_interval(5.0, self.refresh_status)
+        # Set up periodic refresh (async to avoid blocking)
+        self.set_interval(5.0, self._schedule_refresh)
         # Initial async check
-        self.call_later(self.refresh_status)
+        self.call_later(self._schedule_refresh)
+
+    def _schedule_refresh(self) -> None:
+        """Schedule async refresh (wrapper for set_interval compatibility)."""
+        asyncio.create_task(self.refresh_status_async())
 
     def update_display(self) -> None:
         """Update the display with current values."""
@@ -50,31 +60,42 @@ class StatusBar(Static):
         """React to config_name changes."""
         self.update_display()
 
-    def refresh_status(self) -> None:
-        """Refresh all status values."""
+    async def refresh_status_async(self) -> None:
+        """Refresh all status values asynchronously (non-blocking)."""
         app = self.app
+        loop = asyncio.get_event_loop()
 
-        # Tunnel status
+        # Tunnel status - run in thread pool to avoid blocking
         if hasattr(app, "tunnel"):
-            running, msg = app.tunnel.get_status()
-            if running:
-                self.tunnel_status = f"✅ {msg}"
-            else:
-                self.tunnel_status = f"❌ {msg}"
+            try:
+                running, msg = await loop.run_in_executor(
+                    _status_executor, app.tunnel.get_status
+                )
+                if running:
+                    self.tunnel_status = f"✅ {msg}"
+                else:
+                    self.tunnel_status = f"❌ {msg}"
+            except Exception:
+                self.tunnel_status = "⚠️ Error"
         else:
             self.tunnel_status = "⚠️ N/A"
 
-        # A0 status
+        # A0 status - run in thread pool to avoid blocking
         if hasattr(app, "docker"):
-            running, msg = app.docker.get_status()
-            if running:
-                self.a0_status = f"🟢 {msg}"
-            else:
-                self.a0_status = f"🔴 {msg}"
+            try:
+                running, msg = await loop.run_in_executor(
+                    _status_executor, app.docker.get_status
+                )
+                if running:
+                    self.a0_status = f"🟢 {msg}"
+                else:
+                    self.a0_status = f"🔴 {msg}"
+            except Exception:
+                self.a0_status = "⚠️ Error"
         else:
             self.a0_status = "⚠️ N/A"
 
-        # Config status
+        # Config status (fast - no I/O, just reads cached data)
         if hasattr(app, "config_manager"):
             current = app.config_manager.get_current_a0_config()
             if current and current.model:
@@ -87,3 +108,7 @@ class StatusBar(Static):
                 self.config_name = "Not set"
         else:
             self.config_name = "Unknown"
+
+    def refresh_status(self) -> None:
+        """Sync wrapper for backwards compatibility - schedules async refresh."""
+        self._schedule_refresh()

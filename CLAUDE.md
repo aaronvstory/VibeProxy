@@ -36,29 +36,54 @@ Claude models (via VibeProxy) **CAN** use any temperature (0-1). Only GPT-5 has 
 
 ## Official Context Window Sizes (2025)
 
-| Model | Context Window | Max Output | Temperature |
-|-------|---------------|------------|-------------|
-| **GPT-5.2 Codex** | 400,000 | 128,000 | 1 only |
-| **GPT-5.1-Codex-Max** | 400,000 | 128,000 | 1 only |
-| **GPT-5.1-Codex-Mini** | 400,000 | 128,000 | 1 only |
-| **GPT-5 / GPT-5-Mini** | 400,000 | 128,000 | 1 only |
-| **Claude Opus 4.5** | 200,000 | 32,000 | 0-1 |
-| **Claude Sonnet 4.5** | 200,000 | 32,000 | 0-1 |
-| **Claude Haiku 4.5** | 200,000 | 8,192 | 0-1 |
-| **Gemini 2.5 Pro** | 1,000,000 | 65,536 | 0-2 |
-| **Gemini 3 Pro** | 1,000,000 | 65,536 | 0-2 |
+| Model | Context Window | Max Output | Temperature | Notes |
+|-------|---------------|------------|-------------|-------|
+| **GPT-5.2 Codex** | 400,000 | 128,000 | 1 only | Best reasoning |
+| **GPT-5.1-Codex-Max** | 400,000 | 128,000 | 1 only | Deep analysis |
+| **GPT-5.1-Codex-Mini** | 400,000 | 128,000 | 1 only | Fast coding |
+| **GPT-5 / GPT-5-Mini** | 400,000 | 128,000 | 1 only | General purpose |
+| **Claude Opus 4.5** | 200,000 | 32,000 | 0-1 | Most capable |
+| **Claude Sonnet 4.5** | 200,000 | 32,000 | 0-1 | Best value |
+| **Claude Haiku 4.5** | 200,000 | 8,192 | 0-1 | Fastest |
+| **Gemini 2.5 Pro** | 1,000,000 | 65,536 | 0-2 | Large context |
+| **Gemini 3 Pro** | 1,000,000 | 65,536 | 0-2 | Latest Gemini |
 
 **Sources:** OpenAI API docs, OpenRouter, Anthropic docs
 
 ## Architecture
 
 ```
-Mac (VibeProxy)          Windows (A0 Docker)
-localhost:8317    <---   host.docker.internal:8317
-     |                          |
-  OAuth proxy              SSH Tunnel
-     |                          |
-  AI APIs                  A0 Container
+┌─────────────────────────────────────────────────────────────────┐
+│                     WINDOWS (This Machine)                       │
+│  ┌─────────────────┐     ┌─────────────────────────────────┐   │
+│  │ VibeProxy       │     │     Docker Desktop               │   │
+│  │ Manager TUI     │     │  ┌───────────────────────────┐  │   │
+│  │ (Python)        │     │  │   Agent Zero (A0)         │  │   │
+│  │                 │     │  │   host.docker.internal    │  │   │
+│  │ - Browse models │     │  │   :8317 ────────────────┐ │  │   │
+│  │ - Chat/test     │     │  │                         │ │  │   │
+│  │ - Apply configs │     │  │   /a0/claude/ (mounted) │ │  │   │
+│  └────────┬────────┘     │  └───────────────────────┴─┘  │   │
+│           │              └─────────────────────────│─────┘   │
+│           │                                        │         │
+│  ┌────────┴────────────────────────────────────────┴───┐     │
+│  │            SSH Tunnel (port 8317)                    │     │
+│  │            localhost:8317 ◄──── Mac via SSH          │     │
+│  └──────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                    SSH Connection
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        MAC (VibeProxy Host)                      │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                    VibeProxy                             │   │
+│  │                  localhost:8317                          │   │
+│  │                                                          │   │
+│  │  OAuth Proxy ───► OpenAI, Anthropic, Google APIs         │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Files
@@ -92,10 +117,18 @@ run.bat
 - `Q` Quit
 - `Esc` Back
 
+**Model Actions (in Browse Models screen):**
+- `c` or `Enter` - Chat with selected model
+- `t` - Test model connectivity
+- `p` - Create A0 preset (saves to configs/)
+- `a` - Apply to A0 (create + activate immediately)
+- `d` - Set as Droid/Factory default model
+- `f` - Toggle favorite
+
 **Features:**
 - Browse all available models with search/filter
 - Interactive chat mode with any model
-- SSH tunnel management
+- **SSH tunnel launcher** - Opens in new window with auto-reconnect & password storage
 - A0 config switching
 - Favorites and max_tokens settings
 
@@ -144,3 +177,98 @@ Working directory: /a0/claude/email-management-tool-2-main
 
 Check the current state of the project, try running it...
 ```
+
+## SSH Tunnel Management
+
+### TUI Tunnel Launcher (NEW)
+
+The TUI now launches the SSH tunnel in a **new terminal window** (same as CLI launcher) with:
+
+- ✅ **Auto-reconnect** on connection drop
+- ✅ **Password auto-login** (saved in `vibeproxy-config.json`)
+- ✅ **Live connection status** with timestamps
+- ✅ **Auto-recovery** from network interruptions
+- ✅ **Visible debugging** - you can see what's happening!
+
+**How to use:**
+1. From TUI Main Menu → Select "🔌 Start SSH Tunnel" (option 1)
+2. A new PowerShell window opens automatically
+3. **First time only:** Enter your SSH password when prompted
+4. Password is saved and auto-used for future connections
+5. Keep the tunnel window open while using VibeProxy
+
+**Password Storage:**
+- Stored in `vibeproxy-config.json` under `SSHPassword` field
+- **Security note:** Password is plain text (same as CLI launcher)
+- To change password: delete the `SSHPassword` field and restart tunnel
+- To use SSH keys instead: set up key-based auth on Mac and leave password blank
+
+**Troubleshooting:**
+
+### SSH Tunnel Issues
+
+**Symptom:** "Connection refused" or models not responding
+
+**Solutions:**
+1. Check if tunnel is running:
+   ```powershell
+   netstat -an | findstr 8317
+   ```
+2. Look at the tunnel window for errors (new window-based launcher shows live status)
+3. If tunnel window shows password errors:
+   - Delete `SSHPassword` from `vibeproxy-config.json`
+   - Restart tunnel from TUI
+4. Verify Mac VibeProxy is running:
+   ```bash
+   ssh your-mac "curl -s http://localhost:8317/v1/models"
+   ```
+
+### Model Returns Empty Response
+
+**Symptom:** Chat returns empty or model doesn't respond
+
+**Solutions:**
+1. Verify temperature for GPT-5 models (MUST be `"1"`)
+2. Check model name spelling matches exactly
+3. Test with the TUI's `t` (test) command
+
+### A0 Can't Find Files
+
+**Symptom:** A0 says "file not found" or uses wrong directory
+
+**Solutions:**
+1. Always specify: `Working directory: /a0/claude/<project>/`
+2. Create symlinks (one-time fix):
+   ```bash
+   ln -sf /a0/claude/<project> /a0/usr/projects/<project>
+   ```
+
+### Docker Container Issues
+
+**Symptom:** A0 container not starting or unhealthy
+
+**Solutions:**
+1. Check Docker Desktop is running
+2. Restart A0 container:
+   ```powershell
+   docker restart agent-zero
+   ```
+3. Check logs:
+   ```powershell
+   docker logs agent-zero --tail 50
+   ```
+
+### TUI Won't Start
+
+**Symptom:** Python errors or missing dependencies
+
+**Solutions:**
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Use Python 3.10+
+3. Try the launcher:
+   ```bash
+   run.bat
+   ```

@@ -93,9 +93,9 @@ if ([string]::IsNullOrWhiteSpace($Password)) {
     $savedPassword = $config.SSHPassword
     if ([string]::IsNullOrWhiteSpace($savedPassword)) {
         Write-Host ""
-        Write-Host "╔════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║        VibeProxy SSH Tunnel - Auto-Reconnect          ║" -ForegroundColor Cyan
-        Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+        Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+        Write-Host "                   VibeProxy SSH Tunnel - Auto-Reconnect                       " -ForegroundColor Cyan
+        Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
         Write-Host ""
         $securePassword = Read-Host "Enter SSH password for $MacUser@$MacIP" -AsSecureString
         $Password = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
@@ -125,21 +125,21 @@ if ($updated -or -not (Test-Path $ConfigPath)) {
 
 # Banner
 Write-Host ""
-Write-Host "════════════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "       VibeProxy SSH Tunnel - Auto-Reconnect           " -ForegroundColor Cyan
-Write-Host "════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "                   VibeProxy SSH Tunnel - Auto-Reconnect                       " -ForegroundColor Cyan
+Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "🔌 Configuration:" -ForegroundColor White
-Write-Host "   Mac Target   : $MacUser@$MacIP" -ForegroundColor Gray
-Write-Host "   Local Port   : $LocalPort" -ForegroundColor Gray
-Write-Host "   Remote Port  : $RemotePort" -ForegroundColor Gray
-Write-Host "   Auto-Reconnect: $(-not $NoAutoReconnect)" -ForegroundColor Gray
-Write-Host "   Password     : (saved)" -ForegroundColor Gray
+Write-Host "  🔌 Configuration:" -ForegroundColor White
+Write-Host "     Mac Target      : $MacUser@$MacIP" -ForegroundColor Gray
+Write-Host "     Local Port      : $LocalPort" -ForegroundColor Gray
+Write-Host "     Remote Port     : $RemotePort" -ForegroundColor Gray
+Write-Host "     Auto-Reconnect  : $(-not $NoAutoReconnect)" -ForegroundColor Gray
+Write-Host "     Password        : (saved)" -ForegroundColor Gray
 Write-Host ""
-Write-Host "💡 Usage Tips:" -ForegroundColor Yellow
-Write-Host "   • Keep this window OPEN while using Factory Droid" -ForegroundColor Gray
-Write-Host "   • Press Ctrl+C to disconnect" -ForegroundColor Gray
-Write-Host "   • Test connection: curl http://localhost:8317/health" -ForegroundColor Gray
+Write-Host "  💡 Usage Tips:" -ForegroundColor Yellow
+Write-Host "     • Keep this window OPEN while using VibeProxy, Factory Droid, or Agent Zero" -ForegroundColor Gray
+Write-Host "     • Press Ctrl+C to disconnect" -ForegroundColor Gray
+Write-Host "     • Test connection: curl http://localhost:8317/health" -ForegroundColor Gray
 Write-Host ""
 
 # Check if SSH is available
@@ -241,16 +241,18 @@ while ($true) {
         Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
         Write-Host "⚠️  Connection failed immediately!" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "Possible issues:" -ForegroundColor Yellow
-        Write-Host "  1. Mac IP wrong or unreachable: $MacIP" -ForegroundColor Gray
-        Write-Host "  2. SSH not enabled on Mac" -ForegroundColor Gray
-        Write-Host "  3. Firewall blocking connection" -ForegroundColor Gray
-        Write-Host "  4. Wrong username: $MacUser" -ForegroundColor Gray
-        Write-Host "  5. Wrong password (delete vibeproxy-config.json to re-enter)" -ForegroundColor Gray
+        Write-Host "  ───────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+        Write-Host "  Possible issues:" -ForegroundColor Yellow
+        Write-Host "    1. Mac IP wrong or unreachable: $MacIP" -ForegroundColor Gray
+        Write-Host "    2. SSH not enabled on Mac" -ForegroundColor Gray
+        Write-Host "    3. Firewall blocking connection" -ForegroundColor Gray
+        Write-Host "    4. Wrong username: $MacUser" -ForegroundColor Gray
+        Write-Host "    5. Wrong password (delete vibeproxy-config.json to re-enter)" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "Verify on Mac:" -ForegroundColor Cyan
-        Write-Host "  • System Settings → Sharing → Remote Login = ON" -ForegroundColor Gray
-        Write-Host "  • Terminal: ipconfig getifaddr en0" -ForegroundColor Gray
+        Write-Host "  Verify on Mac:" -ForegroundColor Cyan
+        Write-Host "    • System Settings → Sharing → Remote Login = ON" -ForegroundColor Gray
+        Write-Host "    • Terminal: ipconfig getifaddr en0" -ForegroundColor Gray
+        Write-Host "  ───────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
         Write-Host ""
     } else {
         Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray

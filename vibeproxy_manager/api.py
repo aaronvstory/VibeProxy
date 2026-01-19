@@ -2,13 +2,20 @@
 
 import httpx
 import time
-from typing import Optional
+from typing import Optional, Any
 
 from .models import Model, ChatMessage, ChatResponse
 
 
 class VibeProxyClient:
     """Async HTTP client for VibeProxy API."""
+
+    # Class-level cache for model list (shared across instances)
+    _model_cache: dict[str, Any] = {
+        "models": [],
+        "last_refresh": 0.0,
+        "cache_seconds": 30,  # Cache TTL in seconds
+    }
 
     def __init__(self, base_url: str = "http://localhost:8317"):
         """Initialize with VibeProxy base URL."""
@@ -18,9 +25,11 @@ class VibeProxyClient:
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the async HTTP client."""
         if self._client is None or self._client.is_closed:
+            # Use reasonable timeouts: 30s for requests, 5s for connect
+            # This prevents UI blocking on slow/hung connections
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=httpx.Timeout(60.0, connect=10.0),
+                timeout=httpx.Timeout(30.0, connect=5.0),
                 headers={"Content-Type": "application/json"},
             )
         return self._client
@@ -40,11 +49,24 @@ class VibeProxyClient:
         except Exception:
             return False
 
-    async def list_models(self) -> list[Model]:
-        """Get list of available models from VibeProxy."""
+    async def list_models(self, force_refresh: bool = False) -> list[Model]:
+        """Get list of available models from VibeProxy.
+
+        Uses a 30-second cache to prevent UI blocking on repeated calls.
+        Pass force_refresh=True to bypass cache (e.g., for explicit refresh action).
+        """
+        cache = VibeProxyClient._model_cache
+        now = time.time()
+        cache_age = now - cache["last_refresh"]
+
+        # Return cached data if still valid
+        if not force_refresh and cache_age < cache["cache_seconds"] and cache["models"]:
+            return cache["models"]
+
         try:
             client = await self._get_client()
-            response = await client.get("/v1/models")
+            # Use shorter timeout for model list (5s) to avoid blocking UI
+            response = await client.get("/v1/models", timeout=5.0)
             response.raise_for_status()
             data = response.json()
 
@@ -56,8 +78,15 @@ class VibeProxyClient:
                     created=item.get("created", 0),
                     owned_by=item.get("owned_by", "vibeproxy"),
                 ))
+
+            # Update cache
+            cache["models"] = models
+            cache["last_refresh"] = now
             return models
         except Exception as e:
+            # On error, return cached data if available (stale is better than nothing)
+            if cache["models"]:
+                return cache["models"]
             raise ConnectionError(f"Failed to list models: {e}")
 
     async def chat(

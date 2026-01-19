@@ -6,7 +6,7 @@
   "chat_model_kwargs": {
     "temperature": "1"
   },
-  "chat_model_ctx_length": 200000,
+  "chat_model_ctx_length": 400000,
   "chat_model_ctx_history": 0.7,
   "chat_model_vision": true,
   "chat_model_rl_requests": 0,

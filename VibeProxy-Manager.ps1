@@ -26,18 +26,29 @@ $Script:MacUser = ""
 $Script:MacIP = ""
 $Script:TunnelPort = 8317
 
-# Neon theme palette
+# Cache for live API model polling (prevents UI blocking)
+$Script:LiveModelCache = @{
+    Models = @()
+    Count = 0
+    LastRefresh = [datetime]::MinValue
+    CacheSeconds = 30  # Refresh every 30 seconds max
+}
+
+# Neon theme palette (fixed conflicts)
 $Script:Theme = @{
-    Border = "Cyan"
-    Title = "Magenta"
-    Section = "Blue"
-    Accent = "Magenta"
-    Text = "White"
-    Muted = "DarkGray"
+    Border = "DarkCyan"       # Subtle borders (was Cyan - conflicted with Glow)
+    Title = "White"           # Section headers (was Magenta - conflicted with Accent)
+    Section = "Blue"          # Keep
+    Accent = "Magenta"        # Highlights
+    Glow = "Cyan"             # Active status
+    Text = "White"            # Keep
+    Muted = "DarkGray"        # Keep
+    Dim = "Gray"              # Secondary text
     Success = "Green"
     Warning = "Yellow"
     Error = "Red"
-    Glow = "Cyan"
+    Shortcut = "DarkYellow"   # Keyboard shortcuts
+    Footer = "DarkGray"       # Footer bar
 }
 
 function Write-Rail {
@@ -51,6 +62,295 @@ function Write-Rail {
     } else {
         Write-Host $line -ForegroundColor $Script:Theme.Border
         Write-Host $Label -ForegroundColor $Script:Theme.Title
+    }
+}
+
+function Write-Footer {
+    <#
+    .SYNOPSIS
+        Displays shortcut legend at screen bottom
+    #>
+    param(
+        [string[]]$Shortcuts = @()
+    )
+
+    Write-Host ""
+    $footerLine = "─" * 71
+    Write-Host $footerLine -ForegroundColor $Script:Theme.Footer
+
+    if ($Shortcuts.Count -gt 0) {
+        $shortcutText = $Shortcuts -join "  │  "
+        Write-Host $shortcutText -ForegroundColor $Script:Theme.Shortcut
+    }
+}
+
+function Write-StatusBar {
+    <#
+    .SYNOPSIS
+        Compact single-line status showing Tunnel, A0, and Config state
+    #>
+    param(
+        [bool]$ShowTunnel = $true,
+        [bool]$ShowA0 = $true,
+        [bool]$ShowConfig = $true
+    )
+
+    $parts = @()
+
+    if ($ShowTunnel) {
+        $tunnelStatus = Get-TunnelStatus  # Fixed: was Test-SSHTunnel (undefined)
+        if ($tunnelStatus) {
+            $parts += "Tunnel: " + "●" + " Connected"
+        } else {
+            $parts += "Tunnel: " + "○" + " Disconnected"
+        }
+    }
+
+    if ($ShowA0) {
+        $a0Running = Get-A0Status  # Fixed: was Test-A0Running (undefined)
+        if ($a0Running) {
+            $parts += "A0: " + "●" + " Running"
+        } else {
+            $parts += "A0: " + "○" + " Stopped"
+        }
+    }
+
+    if ($ShowConfig) {
+        $config = Get-CurrentA0Config
+        $configName = if ($config.model) { $config.model } else { "None" }
+        $parts += "Model: $configName"
+    }
+
+    $statusLine = $parts -join "  │  "
+    Write-Host $statusLine -ForegroundColor $Script:Theme.Dim
+}
+
+function Get-ProviderFromModelId {
+    <#
+    .SYNOPSIS
+        Gets provider name from a model ID string
+        Note: Mirrors logic from Resolve-ModelProvider but works with just model ID
+    #>
+    param([string]$ModelId)
+
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return "Unknown" }
+
+    # Match patterns (keep in sync with Resolve-ModelProvider)
+    if ($ModelId -like "claude*") { return "Claude (Anthropic)" }
+    if ($ModelId -like "gpt*" -or $ModelId -like "o1*" -or $ModelId -like "o3*") { return "OpenAI" }
+    if ($ModelId -like "gemini*") { return "Google (Gemini)" }
+    if ($ModelId -like "grok*") { return "xAI (Grok)" }
+    if ($ModelId -like "raptor*" -or $ModelId -like "antigravity*") { return "Antigravity" }
+    return "Other"
+}
+
+function Write-ModelInfoPanel {
+    <#
+    .SYNOPSIS
+        Displays comprehensive API info panel for CLI setup
+        Shows: Server URL, API endpoints, current model, live available models
+    #>
+    param(
+        [switch]$Compact
+    )
+
+    # Connection status - check tunnel directly
+    $tunnelStatus = $false
+    try {
+        $tunnel = Get-NetTCPConnection -LocalPort $Script:TunnelPort -ErrorAction SilentlyContinue
+        $tunnelStatus = ($null -ne $tunnel)
+    } catch {
+        $tunnelStatus = $false
+    }
+
+    # Get current A0 config
+    $config = Get-CurrentA0Config
+    $modelId = if ($config.model) { $config.model } else { "(none selected)" }
+    $displayName = if ($config.model -and $Script:AvailableModels[$config.model]) {
+        $Script:AvailableModels[$config.model]
+    } else {
+        $modelId
+    }
+    $provider = if ($config.model) { Get-ProviderFromModelId $config.model } else { "N/A" }
+
+    # Server URLs
+    $serverBase = "http://localhost:$($Script:TunnelPort)"
+    $chatEndpoint = "$serverBase/v1/chat/completions"
+    $modelsEndpoint = "$serverBase/v1/models"
+
+    # Use cached model list (refreshes every 30 seconds to avoid UI blocking)
+    $liveModelCount = 0
+    $liveModels = @()
+    if ($tunnelStatus) {
+        $now = [datetime]::Now
+        $cacheAge = ($now - $Script:LiveModelCache.LastRefresh).TotalSeconds
+        if ($cacheAge -gt $Script:LiveModelCache.CacheSeconds) {
+            # Cache expired - refresh in background-safe way (short timeout)
+            try {
+                $response = Invoke-RestMethod -Uri $modelsEndpoint -TimeoutSec 2 -ErrorAction Stop
+                if ($response.data) {
+                    $Script:LiveModelCache.Count = $response.data.Count
+                    $Script:LiveModelCache.Models = $response.data | Select-Object -First 5 | ForEach-Object { $_.id }
+                    $Script:LiveModelCache.LastRefresh = $now
+                }
+            } catch {
+                # On error, keep old cache values (don't block UI)
+            }
+        }
+        $liveModelCount = $Script:LiveModelCache.Count
+        $liveModels = $Script:LiveModelCache.Models
+    }
+
+    $statusIcon = if ($tunnelStatus) { "●" } else { "○" }
+    $statusText = if ($tunnelStatus) { "CONNECTED" } else { "DISCONNECTED" }
+    $statusColor = if ($tunnelStatus) { $Script:Theme.Success } else { $Script:Theme.Error }
+
+    if ($Compact) {
+        # Single-line compact display
+        Write-Host -NoNewline "  API: " -ForegroundColor $Script:Theme.Muted
+        Write-Host -NoNewline $statusIcon -ForegroundColor $statusColor
+        Write-Host -NoNewline " $serverBase " -ForegroundColor $Script:Theme.Glow
+        if ($config.model) {
+            Write-Host -NoNewline "| Model: $modelId" -ForegroundColor $Script:Theme.Accent
+        }
+        if ($liveModelCount -gt 0) {
+            Write-Host -NoNewline " | $liveModelCount models live" -ForegroundColor $Script:Theme.Dim
+        }
+        Write-Host ""
+    } else {
+        # Full panel - horizontal borders only
+        Write-Host "  ═══════════════════════════════════════════════════════════════════════════" -ForegroundColor $Script:Theme.Border
+        Write-Host "  VibeProxy API Info (for any CLI)" -ForegroundColor $Script:Theme.Title
+        Write-Host "  ═══════════════════════════════════════════════════════════════════════════" -ForegroundColor $Script:Theme.Border
+        Write-Host ""
+
+        # Status Line
+        Write-Host -NoNewline "  Status:       " -ForegroundColor $Script:Theme.Text
+        Write-Host "$statusIcon $statusText" -ForegroundColor $statusColor
+
+        # Server URLs
+        Write-Host -NoNewline "  Server URL:   " -ForegroundColor $Script:Theme.Text
+        Write-Host $serverBase -ForegroundColor $Script:Theme.Glow
+
+        Write-Host -NoNewline "  Chat API:     " -ForegroundColor $Script:Theme.Text
+        Write-Host $chatEndpoint -ForegroundColor $Script:Theme.Text
+
+        Write-Host -NoNewline "  Models API:   " -ForegroundColor $Script:Theme.Text
+        Write-Host $modelsEndpoint -ForegroundColor $Script:Theme.Dim
+
+        Write-Host ""
+        Write-Host "  ───────────────────────────────────────────────────────────────────────────" -ForegroundColor $Script:Theme.Border
+
+        # Current Model
+        Write-Host -NoNewline "  A0 Model:     " -ForegroundColor $Script:Theme.Text
+        $modelText = if ($config.model) { "$modelId ($displayName)" } else { "(not configured)" }
+        Write-Host $modelText -ForegroundColor $Script:Theme.Accent
+
+        Write-Host -NoNewline "  Provider:     " -ForegroundColor $Script:Theme.Text
+        Write-Host $provider -ForegroundColor $Script:Theme.Section
+
+        Write-Host ""
+        Write-Host "  ───────────────────────────────────────────────────────────────────────────" -ForegroundColor $Script:Theme.Border
+
+        # Live API Status
+        if ($tunnelStatus -and $liveModelCount -gt 0) {
+            Write-Host -NoNewline "  Live Models:  " -ForegroundColor $Script:Theme.Text
+            Write-Host "$liveModelCount available" -ForegroundColor $Script:Theme.Success
+            Write-Host ""
+
+            foreach ($lm in $liveModels) {
+                Write-Host "    • $lm" -ForegroundColor $Script:Theme.Dim
+            }
+            if ($liveModelCount -gt 5) {
+                Write-Host "    ... and $($liveModelCount - 5) more (press [4] to browse)" -ForegroundColor $Script:Theme.Muted
+            }
+        } elseif (-not $tunnelStatus) {
+            Write-Host "  Live Models:  ⚠ Start tunnel to see available models" -ForegroundColor $Script:Theme.Warning
+        } else {
+            Write-Host "  Live Models:  ❌ API not responding" -ForegroundColor $Script:Theme.Error
+        }
+
+        Write-Host ""
+        Write-Host "  ═══════════════════════════════════════════════════════════════════════════" -ForegroundColor $Script:Theme.Border
+    }
+}
+
+function Write-Toast {
+    <#
+    .SYNOPSIS
+        Auto-dismissing feedback message
+    #>
+    param(
+        [string]$Message,
+        [ValidateSet("Success", "Warning", "Error", "Info")]
+        [string]$Type = "Info",
+        [int]$DurationMs = 1000  # Reduced from 2000 to avoid UI blocking
+    )
+
+    $color = switch ($Type) {
+        "Success" { $Script:Theme.Success }
+        "Warning" { $Script:Theme.Warning }
+        "Error"   { $Script:Theme.Error }
+        default   { $Script:Theme.Glow }
+    }
+
+    $icon = switch ($Type) {
+        "Success" { "✓" }
+        "Warning" { "⚠" }
+        "Error"   { "✗" }
+        default   { "ℹ" }
+    }
+
+    Write-Host ""
+    Write-Host "  $icon $Message" -ForegroundColor $color
+
+    if ($Type -ne "Error") {
+        Start-Sleep -Milliseconds $DurationMs
+    }
+}
+
+function Read-KeyPress {
+    <#
+    .SYNOPSIS
+        Reads a single key press, returns key info
+        Supports Esc for back navigation
+    #>
+    param(
+        [string]$Prompt = "Press a key"
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Prompt)) {
+        Write-Host $Prompt -ForegroundColor $Script:Theme.Muted -NoNewline
+    }
+
+    $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    return $key
+}
+
+function Wait-UserAcknowledge {
+    <#
+    .SYNOPSIS
+        Non-blocking pause replacement with optional auto-dismiss
+    #>
+    param(
+        [string]$Message = "Press any key to continue...",
+        [int]$AutoDismissMs = 0  # 0 = wait forever
+    )
+
+    Write-Host ""
+    Write-Host $Message -ForegroundColor $Script:Theme.Muted
+
+    if ($AutoDismissMs -gt 0) {
+        $timeout = [DateTime]::Now.AddMilliseconds($AutoDismissMs)
+        while ([DateTime]::Now -lt $timeout) {
+            if ([Console]::KeyAvailable) {
+                [Console]::ReadKey($true) | Out-Null
+                return
+            }
+            Start-Sleep -Milliseconds 50
+        }
+    } else {
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     }
 }
 
@@ -196,7 +496,7 @@ function Get-ConfigOptions {
         }
 
         $modelLabel = $model
-        if ($Script:AvailableModels[$model]) {
+        if (-not [string]::IsNullOrWhiteSpace($model) -and $Script:AvailableModels[$model]) {
             $modelLabel = $Script:AvailableModels[$model]
         }
 
@@ -260,7 +560,7 @@ function Get-FactoryConfigPath {
 function Format-ModelDisplayName {
     param([string]$ModelId)
 
-    if ($Script:AvailableModels[$ModelId]) {
+    if (-not [string]::IsNullOrWhiteSpace($ModelId) -and $Script:AvailableModels[$ModelId]) {
         return "$($Script:AvailableModels[$ModelId]) (VibeProxy)"
     }
 
@@ -516,16 +816,16 @@ function Start-ModelChat {
 
     Clear-Host
     Write-Host ""
-    Write-Host "╔══════════════════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host ("║ 💬 Chat: {0,-54} [/exit to quit] ║" -f $ModelId.Substring(0, [Math]::Min($ModelId.Length, 54))) -ForegroundColor Cyan
-    Write-Host "╚══════════════════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host "                   💬 Chat: $ModelId - Type /exit to quit                      " -ForegroundColor Cyan
+    Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Commands: /exit /quit /q = leave  |  /clear = new conversation  |  /tokens N = set max" -ForegroundColor Gray
     Write-Host "            /model = show model     |  /help = show commands" -ForegroundColor Gray
     Write-Host ""
 
     while ($true) {
-        Write-Host "You: " -ForegroundColor Green -NoNewline
+        Write-Host "You: " -ForegroundColor $Script:Theme.Success -NoNewline
         $userInput = Read-Host
 
         if ([string]::IsNullOrWhiteSpace($userInput)) { continue }
@@ -533,7 +833,7 @@ function Start-ModelChat {
         # Handle chat commands
         if ($userInput -match "^/(exit|quit|q)$") {
             Write-Host ""
-            Write-Host "Leaving chat mode..." -ForegroundColor Yellow
+            Write-Host "Leaving chat mode..." -ForegroundColor $Script:Theme.Warning
             Start-Sleep -Milliseconds 500
             break
         }
@@ -542,11 +842,11 @@ function Start-ModelChat {
             $messages = @()
             Clear-Host
             Write-Host ""
-            Write-Host "╔══════════════════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-            Write-Host ("║ 💬 Chat: {0,-54} [/exit to quit] ║" -f $ModelId.Substring(0, [Math]::Min($ModelId.Length, 54))) -ForegroundColor Cyan
-            Write-Host "╚══════════════════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+            Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+            Write-Host "                   💬 Chat: $ModelId - Type /exit to quit                      " -ForegroundColor Cyan
+            Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
             Write-Host ""
-            Write-Host "  ✓ Conversation cleared" -ForegroundColor Green
+            Write-Host "  ✓ Conversation cleared" -ForegroundColor $Script:Theme.Success
             Write-Host ""
             continue
         }
@@ -556,7 +856,7 @@ function Start-ModelChat {
             Set-MaxTokens $newTokens
             $maxTokens = $newTokens
             Write-Host ""
-            Write-Host "  ✓ Max tokens set to $maxTokens" -ForegroundColor Green
+            Write-Host "  ✓ Max tokens set to $maxTokens" -ForegroundColor $Script:Theme.Success
             Write-Host ""
             continue
         }
@@ -627,7 +927,7 @@ function Start-ModelChat {
             $messages = $messages[0..($messages.Count - 2)]
 
             Write-Host ""
-            Write-Host "  ❌ Error: $msg" -ForegroundColor Red
+            Write-Host "  ❌ Error: $msg" -ForegroundColor $Script:Theme.Error
             Write-Host ""
         }
     }
@@ -642,14 +942,14 @@ function Ensure-ConfigForModel {
 
     $basePath = Get-BaseVibeProxyConfigPath
     if (-not $basePath) {
-        Write-Host "❌ No base VibeProxy config found in $Script:ConfigDir" -ForegroundColor Red
+        Write-Host "❌ No base VibeProxy config found in $Script:ConfigDir" -ForegroundColor $Script:Theme.Error
         return $null
     }
 
     try {
         $cfg = Get-Content $basePath -Raw | ConvertFrom-Json
     } catch {
-        Write-Host "❌ Failed to read base config: $basePath" -ForegroundColor Red
+        Write-Host "❌ Failed to read base config: $basePath" -ForegroundColor $Script:Theme.Error
         return $null
     }
 
@@ -719,12 +1019,12 @@ function Write-CheckLine {
     )
 
     if ($Ok) {
-        Write-Host "  ✅ $Name" -ForegroundColor Green
+        Write-Host "  ✅ $Name" -ForegroundColor $Script:Theme.Success
         if ($Details) { Write-Host "     $Details" -ForegroundColor DarkGray }
     } else {
-        Write-Host "  ❌ $Name" -ForegroundColor Red
+        Write-Host "  ❌ $Name" -ForegroundColor $Script:Theme.Error
         if ($Details) { Write-Host "     $Details" -ForegroundColor DarkGray }
-        if ($Hint) { Write-Host "     Fix: $Hint" -ForegroundColor Yellow }
+        if ($Hint) { Write-Host "     Fix: $Hint" -ForegroundColor $Script:Theme.Warning }
     }
 }
 
@@ -742,22 +1042,46 @@ function Get-A0Status {
 }
 
 function Get-CurrentA0Config {
-    if (Test-Path $Script:A0SettingsPath) {
-        $settings = Get-Content $Script:A0SettingsPath | ConvertFrom-Json
-        $provider = $settings.chat_model_provider
-        $model = $settings.chat_model_name
-        $apiBase = $settings.chat_model_api_base
+    <#
+    .SYNOPSIS
+        Returns current A0 config as an object with model details
+    #>
+    $result = [pscustomobject]@{
+        model = $null
+        provider = $null
+        apiBase = $null
+        mode = "Unknown"
+        displayString = "Unknown"
+    }
 
-        if ($apiBase -like "*host.docker.internal*" -or $apiBase -like "*localhost:8317*") {
-            $displayName = if ($Script:AvailableModels[$model]) { $Script:AvailableModels[$model] } else { $model }
-            return "VibeProxy: $displayName"
-        } elseif ($provider -eq "openrouter") {
-            return "OpenRouter: $model"
-        } else {
-            return "$provider`: $model"
+    if (Test-Path $Script:A0SettingsPath) {
+        try {
+            $settings = Get-Content $Script:A0SettingsPath -Raw | ConvertFrom-Json
+            $result.provider = $settings.chat_model_provider
+            $result.model = $settings.chat_model_name
+            $result.apiBase = $settings.chat_model_api_base
+
+            if ($result.apiBase -like "*host.docker.internal*" -or $result.apiBase -like "*localhost:8317*") {
+                $result.mode = "VibeProxy"
+                $displayName = if (-not [string]::IsNullOrWhiteSpace($result.model) -and $Script:AvailableModels[$result.model]) {
+                    $Script:AvailableModels[$result.model]
+                } else {
+                    $result.model
+                }
+                $result.displayString = "VibeProxy: $displayName"
+            } elseif ($result.provider -eq "openrouter") {
+                $result.mode = "OpenRouter"
+                $result.displayString = "OpenRouter: $($result.model)"
+            } else {
+                $result.mode = $result.provider
+                $result.displayString = "$($result.provider): $($result.model)"
+            }
+        } catch {
+            # Config parse error - return defaults
         }
     }
-    return "Unknown"
+
+    return $result
 }
 
 function Show-Status {
@@ -787,10 +1111,10 @@ function Show-Status {
     # Current Config
     $currentConfig = Get-CurrentA0Config
     Write-Host "  A0 Config:  " -NoNewline -ForegroundColor $Script:Theme.Text
-    if ($currentConfig -like "*VibeProxy*") {
-        Write-Host "🔵 $currentConfig" -ForegroundColor $Script:Theme.Glow
+    if ($currentConfig.mode -eq "VibeProxy") {
+        Write-Host "🔵 $($currentConfig.displayString)" -ForegroundColor $Script:Theme.Glow
     } else {
-        Write-Host "🟢 $currentConfig" -ForegroundColor $Script:Theme.Success
+        Write-Host "🟢 $($currentConfig.displayString)" -ForegroundColor $Script:Theme.Success
     }
     Write-Host ""
 }
@@ -850,7 +1174,7 @@ function Start-Tunnel {
     Refresh-VibeProxyConfig
     $tunnelRunning = Get-TunnelStatus
     if ($tunnelRunning) {
-        Write-Host "⚠️  Tunnel already running on port $Script:TunnelPort" -ForegroundColor Yellow
+        Write-Host "⚠️  Tunnel already running on port $Script:TunnelPort" -ForegroundColor $Script:Theme.Warning
         return $true
     }
 
@@ -859,12 +1183,12 @@ function Start-Tunnel {
     $tunnelScript = Join-Path $PSScriptRoot "ssh-tunnel-vibeproxy.ps1"
     if (Test-Path $tunnelScript) {
         Start-Process powershell -ArgumentList "-NoExit", "-File", $tunnelScript
-        Write-Host "✅ Tunnel started in new window" -ForegroundColor Green
+        Write-Host "✅ Tunnel started in new window" -ForegroundColor $Script:Theme.Success
         Write-Host "   Keep that window open while using VibeProxy!" -ForegroundColor Gray
         Start-Sleep -Seconds 3
         return $true
     } else {
-        Write-Host "❌ Tunnel script not found: $tunnelScript" -ForegroundColor Red
+        Write-Host "❌ Tunnel script not found: $tunnelScript" -ForegroundColor $Script:Theme.Error
         return $false
     }
 }
@@ -873,10 +1197,10 @@ function Restart-A0 {
     Write-Host "🔄 Restarting Agent Zero container..." -ForegroundColor Cyan
     docker restart agent-zero-instance 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Container restarted successfully" -ForegroundColor Green
+        Write-Host "✅ Container restarted successfully" -ForegroundColor $Script:Theme.Success
         Write-Host "   Wait ~10 seconds for A0 to fully start" -ForegroundColor Gray
     } else {
-        Write-Host "❌ Failed to restart container" -ForegroundColor Red
+        Write-Host "❌ Failed to restart container" -ForegroundColor $Script:Theme.Error
     }
 }
 
@@ -890,7 +1214,7 @@ function Switch-A0Config {
     $configFile = Join-Path $Script:ConfigDir "a0-$ConfigName.json"
 
     if (-not (Test-Path $configFile)) {
-        Write-Host "❌ Config not found: $configFile" -ForegroundColor Red
+        Write-Host "❌ Config not found: $configFile" -ForegroundColor $Script:Theme.Error
         return $false
     }
 
@@ -898,7 +1222,7 @@ function Switch-A0Config {
     if ($ConfigName -like "*vibeproxy*") {
         $tunnelRunning = Get-TunnelStatus
         if (-not $tunnelRunning) {
-            Write-Host "⚠️  VibeProxy mode requires SSH tunnel!" -ForegroundColor Yellow
+            Write-Host "⚠️  VibeProxy mode requires SSH tunnel!" -ForegroundColor $Script:Theme.Warning
             $response = Read-Host "Start tunnel now? (Y/n)"
             if ($response -ne 'n') {
                 $started = Start-Tunnel
@@ -909,27 +1233,43 @@ function Switch-A0Config {
 
     Write-Host "📝 Switching A0 to: $ConfigName" -ForegroundColor Cyan
 
-    # Read new config (partial - only model settings)
-    $newConfig = Get-Content $configFile | ConvertFrom-Json
+    # Read new config (partial - only model settings) with -Raw for proper JSON parsing
+    try {
+        $newConfig = Get-Content $configFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Write-Host "❌ Failed to parse config file: $_" -ForegroundColor $Script:Theme.Error
+        return $false
+    }
     $owner = Get-ModelOwner $newConfig.chat_model_name
     Apply-ModelOwnerRules $newConfig $owner
     Apply-ModelTempRules $newConfig
 
-    # Read current full settings
+    # Read current full settings with -Raw and error handling
     if (-not (Test-Path $Script:A0SettingsPath)) {
-        Write-Host "❌ A0 settings file not found!" -ForegroundColor Red
+        Write-Host "❌ A0 settings file not found!" -ForegroundColor $Script:Theme.Error
         return $false
     }
-    $currentSettings = Get-Content $Script:A0SettingsPath | ConvertFrom-Json
+    try {
+        $currentSettings = Get-Content $Script:A0SettingsPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Write-Host "❌ Failed to parse A0 settings: $_" -ForegroundColor $Script:Theme.Error
+        return $false
+    }
+
+    # Verify we got valid settings before proceeding
+    if ($null -eq $currentSettings) {
+        Write-Host "❌ A0 settings file is empty or invalid!" -ForegroundColor $Script:Theme.Error
+        return $false
+    }
 
     # Backup current settings
     $backupPath = Join-Path $Script:ConfigDir "backups"
     if (-not (Test-Path $backupPath)) { New-Item -ItemType Directory -Path $backupPath | Out-Null }
     $backupFile = Join-Path $backupPath "a0-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
-    $currentSettings | ConvertTo-Json -Depth 10 | Set-Content $backupFile
+    $currentSettings | ConvertTo-Json -Depth 10 | Set-Content $backupFile -Encoding UTF8
     Write-Host "   Backup: $backupFile" -ForegroundColor DarkGray
 
-    # Update only model-related settings
+    # Update only model-related settings using direct property assignment
     $modelSettings = @(
         "chat_model_provider", "chat_model_name", "chat_model_api_base", "chat_model_kwargs",
         "chat_model_ctx_length", "chat_model_ctx_history", "chat_model_vision",
@@ -943,24 +1283,33 @@ function Switch-A0Config {
 
     foreach ($setting in $modelSettings) {
         if ($null -ne $newConfig.$setting) {
-            $currentSettings.$setting = $newConfig.$setting
+            # Use direct assignment for PSCustomObject (more efficient than Add-Member)
+            if ($currentSettings.PSObject.Properties[$setting]) {
+                $currentSettings.$setting = $newConfig.$setting
+            } else {
+                $currentSettings | Add-Member -NotePropertyName $setting -NotePropertyValue $newConfig.$setting -Force
+            }
         }
     }
 
-    # Update API keys if present in new config
+    # Update API keys if present in new config (handle as PSCustomObject, not hashtable)
     if ($newConfig.api_keys) {
         if (-not $currentSettings.api_keys) {
-            $currentSettings | Add-Member -NotePropertyName "api_keys" -NotePropertyValue @{} -Force
+            $currentSettings | Add-Member -NotePropertyName "api_keys" -NotePropertyValue ([pscustomobject]@{}) -Force
         }
         foreach ($key in $newConfig.api_keys.PSObject.Properties) {
-            $currentSettings.api_keys | Add-Member -NotePropertyName $key.Name -NotePropertyValue $key.Value -Force
+            if ($currentSettings.api_keys.PSObject.Properties[$key.Name]) {
+                $currentSettings.api_keys.($key.Name) = $key.Value
+            } else {
+                $currentSettings.api_keys | Add-Member -NotePropertyName $key.Name -NotePropertyValue $key.Value -Force
+            }
         }
     }
 
-    # Save updated settings
-    $currentSettings | ConvertTo-Json -Depth 10 | Set-Content $Script:A0SettingsPath
+    # Save updated settings with UTF8 encoding
+    $currentSettings | ConvertTo-Json -Depth 10 | Set-Content $Script:A0SettingsPath -Encoding UTF8
 
-    Write-Host "✅ Config switched to: $ConfigName" -ForegroundColor Green
+    Write-Host "✅ Config switched to: $ConfigName" -ForegroundColor $Script:Theme.Success
 
     if ($AutoRestart) {
         Write-Host ""
@@ -992,13 +1341,13 @@ function Test-VibeProxy {
     }
 
     if ($healthOk) {
-        Write-Host "   ✅ Health endpoint OK" -ForegroundColor Green
+        Write-Host "   ✅ Health endpoint OK" -ForegroundColor $Script:Theme.Success
     } else {
         try {
             $response = Invoke-WebRequest -Uri "http://localhost:$Script:TunnelPort" -Method GET -TimeoutSec 5 -ErrorAction Stop
-            Write-Host "   ✅ Connected (root endpoint)" -ForegroundColor Green
+            Write-Host "   ✅ Connected (root endpoint)" -ForegroundColor $Script:Theme.Success
         } catch {
-            Write-Host "   ❌ FAILED - Is SSH tunnel running?" -ForegroundColor Red
+            Write-Host "   ❌ FAILED - Is SSH tunnel running?" -ForegroundColor $Script:Theme.Error
             return
         }
     }
@@ -1009,7 +1358,7 @@ function Test-VibeProxy {
     $models = Get-VibeProxyModels
     if ($models) {
         $modelCount = $models.data.Count
-        Write-Host "   ✅ $modelCount models available" -ForegroundColor Green
+        Write-Host "   ✅ $modelCount models available" -ForegroundColor $Script:Theme.Success
 
         # Group by provider
         $claude = ($models.data | Where-Object { $_.id -like "claude*" }).Count
@@ -1019,7 +1368,7 @@ function Test-VibeProxy {
 
         Write-Host "      Claude: $claude | GPT: $gpt | Gemini: $gemini | Other: $other" -ForegroundColor DarkGray
     } else {
-        Write-Host "   ⚠️  Could not list models" -ForegroundColor Yellow
+        Write-Host "   ⚠️  Could not list models" -ForegroundColor $Script:Theme.Warning
     }
 
     # Test API call
@@ -1047,7 +1396,7 @@ function Test-VibeProxy {
         }
 
         if (-not $selectedModel) {
-            Write-Host "   ⚠️  No models available to test" -ForegroundColor Yellow
+            Write-Host "   ⚠️  No models available to test" -ForegroundColor $Script:Theme.Warning
             Write-Host ""
             return
         }
@@ -1066,9 +1415,9 @@ function Test-VibeProxy {
             -TimeoutSec 30
 
         $reply = $response.choices[0].message.content
-        Write-Host "   ✅ Response: $reply" -ForegroundColor Green
+        Write-Host "   ✅ Response: $reply" -ForegroundColor $Script:Theme.Success
     } catch {
-        Write-Host "   ❌ API call failed" -ForegroundColor Red
+        Write-Host "   ❌ API call failed" -ForegroundColor $Script:Theme.Error
         Write-Host "      $($_.Exception.Message)" -ForegroundColor DarkGray
     }
 
@@ -1088,7 +1437,7 @@ function Show-ConfigMenu {
     Write-Rail
     Write-Host ""
     $currentConfig = Get-CurrentA0Config
-    Write-Host ("  Current: {0}" -f $currentConfig) -ForegroundColor $Script:Theme.Muted
+    Write-Host ("  Current: {0}" -f $currentConfig.displayString) -ForegroundColor $Script:Theme.Muted
     Write-Host ""
 
     $index = 1
@@ -1114,17 +1463,20 @@ function Show-ConfigMenu {
             $selected = $configs[$idx - 1]
             Switch-A0Config $selected.Name
         } else {
-            Write-Host "Invalid selection" -ForegroundColor Red
+            Write-Host "Invalid selection" -ForegroundColor $Script:Theme.Error
         }
     } else {
-        Write-Host "Invalid selection" -ForegroundColor Red
+        Write-Host "Invalid selection" -ForegroundColor $Script:Theme.Error
     }
 }
 
 function Show-Menu {
     while ($true) {
         Write-Banner
-        Show-Status
+
+        # Display current model info panel (user requirement)
+        Write-ModelInfoPanel
+        Write-Host ""
 
         Write-Host "✨ Main Menu" -ForegroundColor $Script:Theme.Title
         Write-Rail
@@ -1140,19 +1492,21 @@ function Show-Menu {
         Write-Host "───────────────────────────────────────────────────────────────────────" -ForegroundColor $Script:Theme.Border
         Write-Host "  ⚙️  System" -ForegroundColor $Script:Theme.Section
         Write-Host "    [5] Restart Agent Zero      [S] Show Status      [Q] Quit" -ForegroundColor $Script:Theme.Text
-        Write-Host ""
+
+        # Footer with shortcuts
+        Write-Footer -Shortcuts @("[1-6] Select", "[S] Status", "[Q] Quit")
 
         $choice = Read-Host "Select option"
         switch ($choice.ToLower()) {
-            "1" { Start-Tunnel; Pause }
-            "2" { Show-ConfigMenu; Pause }
-            "3" { Test-VibeProxy; Pause }
-            "4" { Show-AllModels; Pause }
-            "5" { Restart-A0; Pause }
-            "6" { Verify-Setup; Pause }
-            "s" { Show-Status; Pause }
+            "1" { Start-Tunnel; Wait-UserAcknowledge }
+            "2" { Show-ConfigMenu }
+            "3" { Test-VibeProxy; Wait-UserAcknowledge }
+            "4" { Show-AllModels }
+            "5" { Restart-A0; Wait-UserAcknowledge }
+            "6" { Verify-Setup; Wait-UserAcknowledge }
+            "s" { Show-Status; Wait-UserAcknowledge }
             "q" { return }
-            default { Write-Host "Invalid option" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+            default { Write-Toast -Message "Invalid option" -Type "Warning" -DurationMs 1000 }
         }
     }
 }
@@ -1187,11 +1541,18 @@ function Show-AllModels {
     $showModelList = $false  # Compact mode by default
     $maxTokens = Get-MaxTokens
 
+    # Get current A0 model for highlighting
+    $currentConfig = Get-CurrentA0Config
+    $currentModelId = if ($currentConfig.model) { $currentConfig.model } else { "" }
+
     while ($true) {
         $indexMap = @{}
         Write-Host ""
         Write-Host "Browse Models (Live Providers + Search)" -ForegroundColor $Script:Theme.Title
         Write-Rail
+
+        # Show current model info panel
+        Write-ModelInfoPanel -Compact
         Write-Host ""
 
         Write-Host "  Providers (toggle):" -ForegroundColor $Script:Theme.Text
@@ -1211,10 +1572,9 @@ function Show-AllModels {
         Write-Host ("  Poll live list: {0} ({1}s)" -f $(if ($pollOn) { "On" } else { "Off" }), $pollIntervalSec) -ForegroundColor $Script:Theme.Text
         Write-Host ""
         Write-Host ("  Max tokens: {0}" -f $maxTokens) -ForegroundColor $Script:Theme.Text
-        Write-Host ""
-        Write-Host "  [L]=list models  [C]=chat (#)  [P]=pick (#)  [X]=test (#)  [S]=search  [F]=fav (#)" -ForegroundColor $Script:Theme.Muted
-        Write-Host "  [number]=toggle provider  [A]=all  [N]=none  [V]=view  [O]=fav-only  [T]=preflight  [R]=refresh  [Q]=back" -ForegroundColor $Script:Theme.Muted
-        Write-Host ""
+
+        # Footer with shortcuts
+        Write-Footer -Shortcuts @("[L] List", "[C#] Chat", "[P#] Pick", "[X#] Test", "[S] Search", "[F#] Fav", "[Q] Back")
 
         $activeProviders = $providers | Where-Object { $selected[$_] }
         if (-not $activeProviders -or $activeProviders.Count -eq 0) {
@@ -1239,7 +1599,7 @@ function Show-AllModels {
             Write-Host "  📋 Providers: $($providerSummary -join ' | ')" -ForegroundColor $Script:Theme.Text
             Write-Host "  📊 Total: $totalModels models | ⭐ Favorites: $($favorites.Count) starred" -ForegroundColor $Script:Theme.Muted
             Write-Host ""
-            Write-Host "  💡 Press [L] to list all models, [C #] to chat with model #" -ForegroundColor Yellow
+            Write-Host "  💡 Press [L] to list all models, [C #] to chat with model #" -ForegroundColor $Script:Theme.Warning
 
             # Still build indexMap for command handlers
             $index = 1
@@ -1273,9 +1633,14 @@ function Show-AllModels {
                 Write-Host "  Models (flat):" -ForegroundColor $Script:Theme.Text
                 foreach ($item in $flat) {
                     $indexMap[$index] = $item
-                    $favMark = if ($favorites -contains $item.Id) { "[*]" } else { "[ ]" }
-                    $color = if ($favorites -contains $item.Id) { "Yellow" } else { "Gray" }
-                    Write-Host ("    {0,3}. {1} {2} :: {3}" -f $index, $favMark, $item.Provider, $item.Id) -ForegroundColor $color
+                    $isCurrent = ($item.Id -eq $currentModelId)
+                    $currentMark = if ($isCurrent) { "→" } else { " " }
+                    $favMark = if ($favorites -contains $item.Id) { "*" } else { " " }
+                    $color = if ($isCurrent) { $Script:Theme.Glow } elseif ($favorites -contains $item.Id) { "Yellow" } else { "Gray" }
+                    # Get display name if available
+                    $modelDisplayName = if ($Script:AvailableModels[$item.Id]) { $Script:AvailableModels[$item.Id] } else { "" }
+                    $displayText = if ($modelDisplayName) { "$($item.Id) - $modelDisplayName" } else { $item.Id }
+                    Write-Host ("  {0} {1,3}. [{2}] {3} :: {4}" -f $currentMark, $index, $favMark, $item.Provider, $displayText) -ForegroundColor $color
                     $index++
                 }
             } else {
@@ -1293,14 +1658,19 @@ function Show-AllModels {
                     Write-Host "  $provider ($($list.Count)):" -ForegroundColor $Script:Theme.Text
                     Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor $Script:Theme.Muted
                     foreach ($id in $list) {
-                    $indexMap[$index] = [pscustomobject]@{ Provider = $provider; Id = $id }
-                    $favMark = if ($favorites -contains $id) { "[*]" } else { "[ ]" }
-                    $color = if ($favorites -contains $id) { "Yellow" } else { "Gray" }
-                    Write-Host ("    {0,3}. {1} {2}" -f $index, $favMark, $id) -ForegroundColor $color
-                    $index++
+                        $indexMap[$index] = [pscustomobject]@{ Provider = $provider; Id = $id }
+                        $isCurrent = ($id -eq $currentModelId)
+                        $currentMark = if ($isCurrent) { "→" } else { " " }
+                        $favMark = if ($favorites -contains $id) { "*" } else { " " }
+                        $color = if ($isCurrent) { $Script:Theme.Glow } elseif ($favorites -contains $id) { "Yellow" } else { "Gray" }
+                        # Get display name if available
+                        $modelDisplayName = if ($Script:AvailableModels[$id]) { $Script:AvailableModels[$id] } else { "" }
+                        $displayText = if ($modelDisplayName) { "$id - $modelDisplayName" } else { $id }
+                        Write-Host ("  {0} {1,3}. [{2}] {3}" -f $currentMark, $index, $favMark, $displayText) -ForegroundColor $color
+                        $index++
+                    }
                 }
             }
-        }
         }
 
         Write-Host ""
@@ -1384,7 +1754,12 @@ function Show-AllModels {
                     $configName = Ensure-ConfigForModel $modelId
                     if ($configName) {
                         Update-FactoryConfigModel $modelId
-                        Switch-A0Config $configName
+                        $switchResult = Switch-A0Config $configName
+                        # Only update current model and show success if switch succeeded
+                        if ($switchResult -ne $false) {
+                            $currentModelId = $modelId
+                            Write-Toast -Message "Model switched to: $modelId" -Type "Success"
+                        }
                     }
                 } else {
                     Write-Host "Invalid model number" -ForegroundColor $Script:Theme.Error
@@ -1491,10 +1866,10 @@ function Show-AllModels {
                 $provider = $providers[$idx - 1]
                 $selected[$provider] = -not $selected[$provider]
             } else {
-                Write-Host "Invalid selection" -ForegroundColor Red
+                Write-Host "Invalid selection" -ForegroundColor $Script:Theme.Error
             }
         } else {
-            Write-Host "Invalid selection" -ForegroundColor Red
+            Write-Host "Invalid selection" -ForegroundColor $Script:Theme.Error
         }
     }
 }
