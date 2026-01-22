@@ -48,14 +48,26 @@ class ConfigManager:
                 data = json.loads(self.config_path.read_text(encoding="utf-8"))
                 # Map JSON keys to pydantic fields (handle camelCase/PascalCase)
                 mapped = {
-                    "mac_user": data.get("MacUser", data.get("mac_user", config.mac_user)),
+                    "mac_user": data.get(
+                        "MacUser", data.get("mac_user", config.mac_user)
+                    ),
                     "mac_ip": data.get("MacIP", data.get("mac_ip", config.mac_ip)),
-                    "local_port": data.get("LocalPort", data.get("local_port", config.local_port)),
-                    "remote_port": data.get("RemotePort", data.get("remote_port", config.remote_port)),
-                    "ssh_password": data.get("SSHPassword", data.get("ssh_password", config.ssh_password)),
+                    "local_port": data.get(
+                        "LocalPort", data.get("local_port", config.local_port)
+                    ),
+                    "remote_port": data.get(
+                        "RemotePort", data.get("remote_port", config.remote_port)
+                    ),
+                    "ssh_password": data.get(
+                        "SSHPassword", data.get("ssh_password", config.ssh_password)
+                    ),
                     "favorites": data.get("Favorites", data.get("favorites", [])),
-                    "disabled_models": data.get("DisabledModels", data.get("disabled_models", [])),
-                    "max_tokens": data.get("MaxTokens", data.get("max_tokens", config.max_tokens)),
+                    "disabled_models": data.get(
+                        "DisabledModels", data.get("disabled_models", [])
+                    ),
+                    "max_tokens": data.get(
+                        "MaxTokens", data.get("max_tokens", config.max_tokens)
+                    ),
                 }
                 config = VibeProxyConfig(**mapped)
             except (json.JSONDecodeError, Exception):
@@ -81,10 +93,7 @@ class ConfigManager:
             "MaxTokens": config.max_tokens,
         }
 
-        self.config_path.write_text(
-            json.dumps(data, indent=2),
-            encoding="utf-8"
-        )
+        self.config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         self._config = config
 
     def get_a0_configs(self) -> list[A0Config]:
@@ -107,12 +116,14 @@ class ConfigManager:
                 # Parse name from filename (a0-gpt-5.2-codex.json -> GPT-5.2 Codex)
                 name = path.stem.replace("a0-", "").replace("-", " ").title()
 
-                configs.append(A0Config(
-                    name=name,
-                    path=str(path),
-                    model=model,
-                    description=f"Uses {model}" if model else "",
-                ))
+                configs.append(
+                    A0Config(
+                        name=name,
+                        path=str(path),
+                        model=model,
+                        description=f"Uses {model}" if model else "",
+                    )
+                )
             except (json.JSONDecodeError, Exception):
                 continue
 
@@ -145,6 +156,7 @@ class ConfigManager:
             return None
         try:
             from datetime import datetime
+
             backup_dir = self.base_path / "configs" / "backups"
             backup_dir.mkdir(parents=True, exist_ok=True)
             # Include microseconds to prevent collisions from rapid backups
@@ -156,6 +168,7 @@ class ConfigManager:
         except Exception as e:
             # Log backup failure for debugging (caller should notify user)
             import sys
+
             print(f"Warning: Failed to backup A0 config: {e}", file=sys.stderr)
             return None
 
@@ -257,13 +270,14 @@ class ConfigManager:
         """Save Factory config.json, creating parent directories if needed."""
         self.factory_config_path.parent.mkdir(parents=True, exist_ok=True)
         self.factory_config_path.write_text(
-            json.dumps(data, indent=2),
-            encoding="utf-8"
+            json.dumps(data, indent=2), encoding="utf-8"
         )
 
-    def set_factory_default_model(self, model_id: str, display_name: str) -> tuple[bool, str]:
+    def set_factory_default_model(
+        self, model_id: str, display_name: str
+    ) -> tuple[bool, str]:
         """Upsert a model in Factory config and move it to the top.
-        
+
         Returns:
             tuple[bool, str]: (success, message) where message describes the outcome.
         """
@@ -272,7 +286,7 @@ class ConfigManager:
             factory_dir = self.factory_config_path.parent
             if not factory_dir.exists():
                 factory_dir.mkdir(parents=True, exist_ok=True)
-            
+
             data = self.load_factory_config()
             models = data.get("custom_models")
             if not isinstance(models, list):
@@ -284,7 +298,7 @@ class ConfigManager:
                 "model": model_id,
                 "base_url": base_url,
                 "api_key": "dummy-not-used",
-                "provider": "openai"
+                "provider": "openai",
             }
 
             # Remove any existing entry for this model
@@ -303,3 +317,104 @@ class ConfigManager:
             return False, f"Cannot write to Factory config: {e}"
         except Exception as e:
             return False, f"Unexpected error updating Factory config: {e}"
+
+    def get_factory_custom_models(self) -> list[dict]:
+        """Get all custom models from Factory config.
+
+        Returns list of model dicts with keys: model, model_display_name, base_url, etc.
+        """
+        data = self.load_factory_config()
+        models = data.get("custom_models", [])
+        return models if isinstance(models, list) else []
+
+    def remove_factory_model(self, model_id: str) -> tuple[bool, str]:
+        """Remove a specific model from Factory config by model ID.
+
+        Returns:
+            tuple[bool, str]: (success, message) describing the outcome.
+        """
+        try:
+            data = self.load_factory_config()
+            models = data.get("custom_models", [])
+
+            if not isinstance(models, list):
+                return False, "Factory config has invalid custom_models format"
+
+            # Find and remove the model
+            original_count = len(models)
+            models = [m for m in models if m.get("model") != model_id]
+
+            if len(models) == original_count:
+                return False, f"Model '{model_id}' not found in Factory config"
+
+            data["custom_models"] = models
+            self.save_factory_config(data)
+            return True, f"Removed '{model_id}' from Factory config"
+
+        except Exception as e:
+            return False, f"Failed to remove model: {e}"
+
+    def clear_factory_custom_models(self) -> tuple[bool, str]:
+        """Clear all custom models from Factory config.
+
+        Returns:
+            tuple[bool, str]: (success, message) describing the outcome.
+        """
+        try:
+            data = self.load_factory_config()
+            model_count = len(data.get("custom_models", []))
+
+            data["custom_models"] = []
+            self.save_factory_config(data)
+
+            return True, f"Cleared {model_count} custom models from Factory config"
+
+        except Exception as e:
+            return False, f"Failed to clear models: {e}"
+
+    def sync_vibeproxy_to_factory(
+        self, models: list[tuple[str, str]]
+    ) -> tuple[bool, str]:
+        """Sync all VibeProxy models to Factory config.
+
+        Args:
+            models: list of (model_id, display_name) tuples
+
+        Returns:
+            tuple[bool, str]: (success, message) describing the outcome.
+        """
+        try:
+            data = self.load_factory_config()
+            existing_models = data.get("custom_models", [])
+            if not isinstance(existing_models, list):
+                existing_models = []
+
+            # Get existing model IDs to avoid duplicates
+            existing_ids = {m.get("model") for m in existing_models}
+
+            base_url = f"http://localhost:{self.load().local_port}/v1"
+            added_count = 0
+
+            for model_id, display_name in models:
+                if model_id not in existing_ids:
+                    entry = {
+                        "model_display_name": f"{display_name} (VibeProxy)",
+                        "model": model_id,
+                        "base_url": base_url,
+                        "api_key": "dummy-not-used",
+                        "provider": "openai",
+                    }
+                    existing_models.append(entry)
+                    existing_ids.add(model_id)
+                    added_count += 1
+
+            data["custom_models"] = existing_models
+            self.save_factory_config(data)
+
+            return (
+                True,
+                f"Added {added_count} new models ({len(existing_models)} total)",
+            )
+
+        except Exception as e:
+            return False, f"Failed to sync models: {e}"

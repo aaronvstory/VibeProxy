@@ -25,6 +25,7 @@ $Script:Config = $null
 $Script:MacUser = ""
 $Script:MacIP = ""
 $Script:TunnelPort = 8317
+$Script:TunnelPID = $null  # Track SSH tunnel process PID
 
 # Cache for live API model polling (prevents UI blocking)
 $Script:LiveModelCache = @{
@@ -627,6 +628,305 @@ function Update-FactoryConfigModel {
     $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
 }
 
+# ═══════════════════════════════════════════════════════════════════════
+# Droid Model Management Functions
+# ═══════════════════════════════════════════════════════════════════════
+
+function Get-DroidCustomModels {
+    <#
+    .SYNOPSIS
+        Read all custom models from ~/.factory/config.json
+    #>
+    $configPath = Get-FactoryConfigPath
+    if (-not (Test-Path $configPath)) {
+        return @()
+    }
+
+    try {
+        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        if ($config.custom_models) {
+            return $config.custom_models
+        }
+    } catch {
+        # Ignore parse errors
+    }
+    return @()
+}
+
+function Remove-DroidCustomModel {
+    <#
+    .SYNOPSIS
+        Remove a specific model from Droid's custom_models config
+    #>
+    param([string]$ModelId)
+
+    $configPath = Get-FactoryConfigPath
+    if (-not (Test-Path $configPath)) {
+        Write-Host "❌ Factory config not found" -ForegroundColor $Script:Theme.Error
+        return $false
+    }
+
+    try {
+        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        if (-not $config.custom_models) {
+            Write-Host "⚠️  No custom models in config" -ForegroundColor $Script:Theme.Warning
+            return $false
+        }
+
+        $originalCount = $config.custom_models.Count
+        $config.custom_models = @($config.custom_models | Where-Object { $_.model -ne $ModelId })
+        $newCount = $config.custom_models.Count
+
+        if ($newCount -lt $originalCount) {
+            $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+            Write-Host "✅ Removed model: $ModelId" -ForegroundColor $Script:Theme.Success
+            return $true
+        } else {
+            Write-Host "⚠️  Model not found: $ModelId" -ForegroundColor $Script:Theme.Warning
+            return $false
+        }
+    } catch {
+        Write-Host "❌ Failed to update config: $_" -ForegroundColor $Script:Theme.Error
+        return $false
+    }
+}
+
+function Sync-VibeProxyToDroid {
+    <#
+    .SYNOPSIS
+        Sync all live VibeProxy models to Droid's custom_models config
+    #>
+    $models = Get-VibeProxyModels
+    if (-not $models -or -not $models.data) {
+        Write-Host "❌ Could not fetch VibeProxy models - is tunnel running?" -ForegroundColor $Script:Theme.Error
+        return $false
+    }
+
+    $configPath = Get-FactoryConfigPath
+    $config = $null
+
+    if (Test-Path $configPath) {
+        try {
+            $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        } catch {
+            $config = $null
+        }
+    }
+
+    if (-not $config) {
+        $config = [pscustomobject]@{ custom_models = @() }
+    }
+    if (-not $config.PSObject.Properties["custom_models"]) {
+        $config | Add-Member -NotePropertyName "custom_models" -NotePropertyValue @() -Force
+    }
+
+    # Build lookup of existing models by ID
+    $existingIds = @{}
+    foreach ($m in $config.custom_models) {
+        $existingIds[$m.model] = $true
+    }
+
+    $baseUrl = "http://localhost:$Script:TunnelPort/v1"
+    $addedCount = 0
+    $updatedCount = 0
+
+    foreach ($model in $models.data) {
+        $modelId = $model.id
+        $displayName = Format-ModelDisplayName $modelId
+
+        $entry = [pscustomobject]@{
+            model_display_name = $displayName
+            model = $modelId
+            base_url = $baseUrl
+            api_key = "dummy-not-used"
+            provider = "openai"
+        }
+
+        if ($existingIds[$modelId]) {
+            # Update existing entry
+            $config.custom_models = @($config.custom_models | ForEach-Object {
+                if ($_.model -eq $modelId) {
+                    $_.model_display_name = $displayName
+                    $_.base_url = $baseUrl
+                    $_
+                } else {
+                    $_
+                }
+            })
+            $updatedCount++
+        } else {
+            # Add new entry
+            $config.custom_models = @($config.custom_models) + @($entry)
+            $addedCount++
+        }
+    }
+
+    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+    Write-Host "✅ Synced $($models.data.Count) models to Droid config" -ForegroundColor $Script:Theme.Success
+    Write-Host "   Added: $addedCount | Updated: $updatedCount" -ForegroundColor $Script:Theme.Dim
+    return $true
+}
+
+function Clear-DroidCustomModels {
+    <#
+    .SYNOPSIS
+        Clear all custom models from Droid's config
+    #>
+    $configPath = Get-FactoryConfigPath
+
+    if (-not (Test-Path $configPath)) {
+        $config = [pscustomobject]@{ custom_models = @() }
+    } else {
+        try {
+            $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        } catch {
+            $config = [pscustomobject]@{ custom_models = @() }
+        }
+    }
+
+    $previousCount = if ($config.custom_models) { $config.custom_models.Count } else { 0 }
+    $config | Add-Member -NotePropertyName "custom_models" -NotePropertyValue @() -Force
+    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+
+    Write-Host "✅ Cleared all custom models from Droid config" -ForegroundColor $Script:Theme.Success
+    Write-Host "   Removed: $previousCount models" -ForegroundColor $Script:Theme.Dim
+    return $true
+}
+
+function Show-DroidModelMenu {
+    <#
+    .SYNOPSIS
+        Sub-menu for managing Droid CLI custom models
+    #>
+    while ($true) {
+        Write-Host ""
+        Write-Host "Manage Droid Models" -ForegroundColor $Script:Theme.Title
+        Write-Rail
+        Write-Host ""
+
+        # Show current custom models
+        $customModels = Get-DroidCustomModels
+        $modelCount = if ($customModels) { $customModels.Count } else { 0 }
+
+        Write-Host "  Current Droid Custom Models: $modelCount" -ForegroundColor $Script:Theme.Text
+        Write-Host ""
+
+        if ($modelCount -gt 0) {
+            $index = 1
+            foreach ($model in $customModels) {
+                $displayName = if ($model.model_display_name) { $model.model_display_name } else { $model.model }
+                Write-Host ("    {0,2}. {1}" -f $index, $displayName) -ForegroundColor $Script:Theme.Dim
+                Write-Host ("        ID: {0}" -f $model.model) -ForegroundColor $Script:Theme.Muted
+                $index++
+            }
+            Write-Host ""
+        }
+
+        Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor $Script:Theme.Border
+        Write-Host ""
+        Write-Host "  Actions:" -ForegroundColor $Script:Theme.Section
+        Write-Host "    [1] View Models (detailed)     [2] Remove Model" -ForegroundColor $Script:Theme.Text
+        Write-Host "    [3] Sync All VibeProxy Models  [4] Clear All Models" -ForegroundColor $Script:Theme.Text
+        Write-Host ""
+        Write-Host "    [B] Back to Main Menu" -ForegroundColor $Script:Theme.Muted
+        Write-Host ""
+
+        Write-Footer -Shortcuts @("[1-4] Select", "[B] Back")
+
+        $choice = Read-Host "Select option"
+        if ([string]::IsNullOrWhiteSpace($choice)) { continue }
+
+        switch ($choice.ToLower()) {
+            "1" {
+                # View detailed model list
+                Write-Host ""
+                Write-Host "Droid Custom Models (Detailed)" -ForegroundColor $Script:Theme.Title
+                Write-Rail
+                Write-Host ""
+
+                $customModels = Get-DroidCustomModels
+                if (-not $customModels -or $customModels.Count -eq 0) {
+                    Write-Host "  No custom models configured" -ForegroundColor $Script:Theme.Warning
+                } else {
+                    $index = 1
+                    foreach ($model in $customModels) {
+                        Write-Host "  [$index] $($model.model_display_name)" -ForegroundColor $Script:Theme.Accent
+                        Write-Host "      Model ID:  $($model.model)" -ForegroundColor $Script:Theme.Text
+                        Write-Host "      Base URL:  $($model.base_url)" -ForegroundColor $Script:Theme.Dim
+                        Write-Host "      Provider:  $($model.provider)" -ForegroundColor $Script:Theme.Dim
+                        Write-Host ""
+                        $index++
+                    }
+                }
+                Write-Host ""
+                Write-Host "  Droid Headless Usage:" -ForegroundColor $Script:Theme.Section
+                Write-Host "    droid exec -m custom:<model-id> `"your prompt`"" -ForegroundColor $Script:Theme.Glow
+                Write-Host ""
+                Wait-UserAcknowledge
+            }
+            "2" {
+                # Remove model
+                $customModels = Get-DroidCustomModels
+                if (-not $customModels -or $customModels.Count -eq 0) {
+                    Write-Host ""
+                    Write-Host "  No custom models to remove" -ForegroundColor $Script:Theme.Warning
+                    Start-Sleep -Milliseconds 1500
+                    continue
+                }
+
+                Write-Host ""
+                Write-Host "Select model to remove:" -ForegroundColor $Script:Theme.Text
+                $index = 1
+                foreach ($model in $customModels) {
+                    Write-Host ("  {0,2}. {1} ({2})" -f $index, $model.model_display_name, $model.model) -ForegroundColor $Script:Theme.Dim
+                    $index++
+                }
+                Write-Host ""
+
+                $removeChoice = Read-Host "Enter number (or B to cancel)"
+                if ($removeChoice.ToLower() -eq "b") { continue }
+
+                if ($removeChoice -match "^\d+$") {
+                    $removeIndex = [int]$removeChoice
+                    if ($removeIndex -ge 1 -and $removeIndex -le $customModels.Count) {
+                        $modelToRemove = $customModels[$removeIndex - 1]
+                        Write-Host ""
+                        Remove-DroidCustomModel $modelToRemove.model
+                    } else {
+                        Write-Host "  Invalid selection" -ForegroundColor $Script:Theme.Error
+                    }
+                } else {
+                    Write-Host "  Invalid selection" -ForegroundColor $Script:Theme.Error
+                }
+                Start-Sleep -Milliseconds 1500
+            }
+            "3" {
+                # Sync all VibeProxy models
+                Write-Host ""
+                Write-Host "Syncing all VibeProxy models to Droid..." -ForegroundColor Cyan
+                Sync-VibeProxyToDroid
+                Write-Host ""
+                Wait-UserAcknowledge
+            }
+            "4" {
+                # Clear all models
+                Write-Host ""
+                $confirm = Read-Host "Are you sure you want to clear ALL custom models? (y/N)"
+                if ($confirm.ToLower() -eq "y") {
+                    Clear-DroidCustomModels
+                } else {
+                    Write-Host "  Cancelled" -ForegroundColor $Script:Theme.Muted
+                }
+                Start-Sleep -Milliseconds 1500
+            }
+            "b" { return }
+            default {
+                Write-Toast -Message "Invalid option" -Type "Warning" -DurationMs 1000
+            }
+        }
+    }
+}
+
 function Save-Favorites {
     param([string[]]$Favorites)
 
@@ -1029,8 +1329,79 @@ function Write-CheckLine {
 }
 
 function Get-TunnelStatus {
+    <#
+    .SYNOPSIS
+        Check if SSH tunnel is running with multi-layer verification
+    .DESCRIPTION
+        Layer 1: Check if tracked PID exists and is alive
+        Layer 2: Check if port is accepting connections
+        Both must be true for "running" status
+    .OUTPUTS
+        Boolean - $true if tunnel is running and healthy
+    #>
+
+    # Layer 1: PID check (if we have one)
+    if ($Script:TunnelPID -ne $null) {
+        $process = Get-Process -Id $Script:TunnelPID -ErrorAction SilentlyContinue
+        if ($null -eq $process) {
+            # Process is dead - clear tracking
+            $Script:TunnelPID = $null
+            return $false
+        }
+    }
+
+    # Layer 2: Port check
     $tunnel = Get-NetTCPConnection -LocalPort $Script:TunnelPort -ErrorAction SilentlyContinue
-    return ($null -ne $tunnel)
+    $portOpen = ($null -ne $tunnel)
+
+    # Both checks must pass if we're tracking a PID
+    if ($Script:TunnelPID -ne $null) {
+        # We have PID - require both PID and port
+        return $portOpen  # PID check already passed above
+    } else {
+        # No PID (old tunnel or external) - trust port check only
+        return $portOpen
+    }
+}
+
+function Test-TunnelHealth {
+    <#
+    .SYNOPSIS
+        Test if VibeProxy API is responding (deep health check)
+    .OUTPUTS
+        Hashtable with Success (bool) and Message (string)
+    #>
+
+    try {
+        $response = Invoke-RestMethod -Uri "http://localhost:$Script:TunnelPort/v1/models" -TimeoutSec 5 -ErrorAction Stop
+        $count = $response.data.Count
+        return @{
+            Success = $true
+            Message = "Connected ($count models available)"
+        }
+    } catch [System.Net.WebException] {
+        if ($_.Exception.Message -match "unable to connect|connection refused") {
+            return @{
+                Success = $false
+                Message = "Connection refused - is SSH tunnel running?"
+            }
+        } elseif ($_.Exception.Message -match "timed out") {
+            return @{
+                Success = $false
+                Message = "Connection timeout"
+            }
+        } else {
+            return @{
+                Success = $false
+                Message = $_.Exception.Message
+            }
+        }
+    } catch {
+        return @{
+            Success = $false
+            Message = $_.Exception.Message
+        }
+    }
 }
 
 function Get-A0Status {
@@ -1171,19 +1542,64 @@ function Verify-Setup {
 }
 
 function Start-Tunnel {
+    <#
+    .SYNOPSIS
+        Start SSH tunnel with zombie state detection and recovery
+    #>
     Refresh-VibeProxyConfig
     $tunnelRunning = Get-TunnelStatus
+
     if ($tunnelRunning) {
-        Write-Host "⚠️  Tunnel already running on port $Script:TunnelPort" -ForegroundColor $Script:Theme.Warning
-        return $true
+        # Tunnel appears to be running - perform health check to detect zombie states
+        Write-Host "🔍 Tunnel detected, performing health check..." -ForegroundColor $Script:Theme.Dim
+        $health = Test-TunnelHealth
+
+        if ($health.Success) {
+            # Healthy tunnel - already running
+            Write-Host "✅ Tunnel is already running and healthy" -ForegroundColor $Script:Theme.Success
+            Write-Host "   $($health.Message)" -ForegroundColor Gray
+            return $true
+        } else {
+            # Zombie state detected: port open but API not responding
+            Write-Host "⚠️  ZOMBIE STATE DETECTED!" -ForegroundColor $Script:Theme.Warning
+            Write-Host "   Port is open but API not responding" -ForegroundColor $Script:Theme.Dim
+            Write-Host "   Force restarting tunnel..." -ForegroundColor Cyan
+
+            # Clear zombie state
+            $Script:TunnelPID = $null
+
+            # Try to kill process on port
+            try {
+                $pid = (Get-NetTCPConnection -LocalPort $Script:TunnelPort -ErrorAction SilentlyContinue).OwningProcess
+                if ($pid) {
+                    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                    Write-Host "   Killed process $pid on port $Script:TunnelPort" -ForegroundColor $Script:Theme.Dim
+                }
+            } catch {
+                # Ignore errors killing process
+            }
+
+            # Wait for port to release
+            Start-Sleep -Seconds 1
+        }
     }
 
+    # Start tunnel (either fresh or after zombie cleanup)
     Write-Host "🚀 Starting SSH tunnel to $Script:MacUser@$Script:MacIP..." -ForegroundColor Cyan
 
     $tunnelScript = Join-Path $PSScriptRoot "ssh-tunnel-vibeproxy.ps1"
     if (Test-Path $tunnelScript) {
-        Start-Process powershell -ArgumentList "-NoExit", "-File", $tunnelScript
-        Write-Host "✅ Tunnel started in new window" -ForegroundColor $Script:Theme.Success
+        # Use ssh-tunnel-intelligent.py for better error handling
+        $intelligentScript = Join-Path $PSScriptRoot "ssh-tunnel-intelligent.py"
+        if (Test-Path $intelligentScript) {
+            $proc = Start-Process powershell -ArgumentList "-NoExit", "-Command", "python '$intelligentScript'" -PassThru
+            $Script:TunnelPID = $proc.Id
+            Write-Host "✅ Intelligent tunnel launcher started (PID: $($proc.Id))" -ForegroundColor $Script:Theme.Success
+        } else {
+            # Fallback to old script
+            Start-Process powershell -ArgumentList "-NoExit", "-File", $tunnelScript
+            Write-Host "✅ Tunnel started in new window" -ForegroundColor $Script:Theme.Success
+        }
         Write-Host "   Keep that window open while using VibeProxy!" -ForegroundColor Gray
         Start-Sleep -Seconds 3
         return $true
@@ -1191,6 +1607,38 @@ function Start-Tunnel {
         Write-Host "❌ Tunnel script not found: $tunnelScript" -ForegroundColor $Script:Theme.Error
         return $false
     }
+}
+
+function Force-ResetTunnel {
+    <#
+    .SYNOPSIS
+        Force reset tunnel state (for zombie states)
+    .DESCRIPTION
+        Clears tracked PID and attempts to kill any process on port.
+        Use when tunnel appears stuck in "already running" state.
+    #>
+
+    Write-Host "🔄 Force resetting tunnel state..." -ForegroundColor Cyan
+
+    # Clear tracked state
+    $Script:TunnelPID = $null
+    Write-Host "   Cleared PID tracking" -ForegroundColor $Script:Theme.Dim
+
+    # Try to kill process on port
+    try {
+        $connection = Get-NetTCPConnection -LocalPort $Script:TunnelPort -ErrorAction SilentlyContinue
+        if ($connection) {
+            $pid = $connection.OwningProcess
+            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+            Write-Host "✅ Killed process $pid on port $Script:TunnelPort" -ForegroundColor $Script:Theme.Success
+        } else {
+            Write-Host "✅ State reset (no process found on port)" -ForegroundColor $Script:Theme.Success
+        }
+    } catch {
+        Write-Host "✅ State reset (error: $($_.Exception.Message))" -ForegroundColor $Script:Theme.Success
+    }
+
+    Write-Host "   You can now try starting the tunnel again" -ForegroundColor Gray
 }
 
 function Restart-A0 {
@@ -1488,13 +1936,14 @@ function Show-Menu {
         Write-Host "───────────────────────────────────────────────────────────────────────" -ForegroundColor $Script:Theme.Border
         Write-Host "  🧠 Models & Configs" -ForegroundColor $Script:Theme.Section
         Write-Host "    [2] Switch A0 Config        [4] Browse Models" -ForegroundColor $Script:Theme.Text
+        Write-Host "    [7] Manage Droid Models" -ForegroundColor $Script:Theme.Text
         Write-Host ""
         Write-Host "───────────────────────────────────────────────────────────────────────" -ForegroundColor $Script:Theme.Border
         Write-Host "  ⚙️  System" -ForegroundColor $Script:Theme.Section
         Write-Host "    [5] Restart Agent Zero      [S] Show Status      [Q] Quit" -ForegroundColor $Script:Theme.Text
 
         # Footer with shortcuts
-        Write-Footer -Shortcuts @("[1-6] Select", "[S] Status", "[Q] Quit")
+        Write-Footer -Shortcuts @("[1-7] Select", "[S] Status", "[Q] Quit")
 
         $choice = Read-Host "Select option"
         switch ($choice.ToLower()) {
@@ -1504,6 +1953,7 @@ function Show-Menu {
             "4" { Show-AllModels }
             "5" { Restart-A0; Wait-UserAcknowledge }
             "6" { Verify-Setup; Wait-UserAcknowledge }
+            "7" { Show-DroidModelMenu }
             "s" { Show-Status; Wait-UserAcknowledge }
             "q" { return }
             default { Write-Toast -Message "Invalid option" -Type "Warning" -DurationMs 1000 }

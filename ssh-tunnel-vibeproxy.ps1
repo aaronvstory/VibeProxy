@@ -198,10 +198,9 @@ while ($true) {
         Write-Host "Attempt #$AttemptCount - Connecting..." -ForegroundColor Green
 
         if ($usePlink) {
-            # Use plink with -pw parameter
-            & $plinkPath -4 -ssh -batch -T `
-                -o "ServerAliveInterval=60" `
-                -o "ServerAliveCountMax=3" `
+            # Use plink with -pw parameter (PuTTY syntax, not OpenSSH)
+            & $plinkPath -ssh -batch `
+                -hostkey "SHA256:5XgC3h/+waae885A5/IORHon1HPf3QLQXbF84V+mj0Y" `
                 -L "${LocalPort}:localhost:${RemotePort}" `
                 -pw "$Password" `
                 "${MacUser}@${MacIP}" -N

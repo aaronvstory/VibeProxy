@@ -1,7 +1,9 @@
 """Status bar widget showing tunnel, A0, and config status."""
 
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, Tuple
 from textual.widgets import Static
 from textual.reactive import reactive
 from textual.app import ComposeResult
@@ -18,6 +20,13 @@ class StatusBar(Static):
     tunnel_status = reactive("Checking...")
     a0_status = reactive("Checking...")
     config_name = reactive("Unknown")
+
+    def __init__(self, **kwargs):
+        """Initialize status bar with health check caching."""
+        super().__init__(**kwargs)
+        self._last_health_check: Optional[Tuple[bool, str]] = None
+        self._health_check_time: float = 0
+        self._health_check_interval: float = 10.0  # Cache for 10 seconds
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -65,18 +74,40 @@ class StatusBar(Static):
         app = self.app
         loop = asyncio.get_event_loop()
 
-        # Tunnel status - run in thread pool to avoid blocking
+        # Tunnel status with health check caching
         if hasattr(app, "tunnel"):
             try:
-                running, msg = await loop.run_in_executor(
-                    _status_executor, app.tunnel.get_status
+                # Quick PID+port check
+                running = await loop.run_in_executor(
+                    _status_executor, app.tunnel.is_running
                 )
+
+                # Periodic deep health check (every 10s)
+                now = time.time()
+                if now - self._health_check_time > self._health_check_interval:
+                    # Time for fresh health check
+                    if running and hasattr(app, "api"):
+                        try:
+                            success, msg = await app.api.test_connection()
+                            self._last_health_check = (success, msg)
+                            self._health_check_time = now
+                        except Exception:
+                            # Health check failed - mark as unknown
+                            self._last_health_check = (False, "Health check error")
+                            self._health_check_time = now
+
+                # Display status based on PID check and cached health check
                 if running:
-                    self.tunnel_status = f"✅ {msg}"
+                    if self._last_health_check and not self._last_health_check[0]:
+                        # Port open but health check failed (zombie state)
+                        self.tunnel_status = "⚠️ Port Open (API not responding)"
+                    else:
+                        # Healthy or no health check yet
+                        self.tunnel_status = f"✅ Connected (port {app.tunnel.port})"
                 else:
-                    self.tunnel_status = f"❌ {msg}"
-            except Exception:
-                self.tunnel_status = "⚠️ Error"
+                    self.tunnel_status = f"❌ Not connected (port {app.tunnel.port})"
+            except Exception as e:
+                self.tunnel_status = f"⚠️ Error: {str(e)}"
         else:
             self.tunnel_status = "⚠️ N/A"
 
