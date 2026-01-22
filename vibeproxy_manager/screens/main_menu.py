@@ -23,6 +23,7 @@ class MainMenuScreen(Screen):
         Binding("6", "select_restart", "Restart", show=False),
         Binding("7", "select_verify", "Verify", show=False),
         Binding("8", "select_droid", "Droid", show=False),
+        Binding("9", "select_kill_port", "Kill Port", show=False),
         Binding("?", "select_help", "Help", show=False),
         Binding("q", "app.quit", "Quit"),
     ]
@@ -42,6 +43,7 @@ class MainMenuScreen(Screen):
                 Option("🔄 Restart Agent Zero", id="restart"),
                 Option("✅ Verify Setup", id="verify"),
                 Option("🤖 Manage Droid Models", id="droid"),
+                Option("🔪 Kill Port Process", id="kill_port"),
                 Option("❓ Help", id="help"),
                 id="menu-options",
             )
@@ -74,6 +76,8 @@ class MainMenuScreen(Screen):
             await self.action_select_verify()
         elif option_id == "droid":
             self.action_select_droid()
+        elif option_id == "kill_port":
+            await self.action_select_kill_port()
         elif option_id == "help":
             self.action_select_help()
 
@@ -219,6 +223,60 @@ class MainMenuScreen(Screen):
         from .droid_models import DroidModelsScreen
 
         self.app.push_screen(DroidModelsScreen())
+
+    def action_select_kill_port(self) -> None:
+        """Kill any process using the tunnel port with confirmation."""
+        tunnel = self.app.tunnel
+        port = tunnel.port
+
+        # First check what processes are using the port (show before killing)
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-Command",
+                    f"Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | "
+                    "ForEach-Object {{ (Get-Process -Id $_.OwningProcess).Name }} | "
+                    "Sort-Object -Unique",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            procs = result.stdout.strip()
+            if procs:
+                self.notify(
+                    f"⚠️ Killing processes on port {port}:\n{procs}",
+                    title="Kill Port",
+                    severity="warning",
+                    timeout=3,
+                )
+            else:
+                self.notify(f"No processes found on port {port}", title="Kill Port")
+                return
+        except Exception:
+            pass  # Continue with force_reset even if check fails
+
+        success, msg = tunnel.force_reset()
+
+        if success:
+            self.notify(
+                f"✅ {msg}\n\nPort {port} should now be available.",
+                title="Port Cleared",
+                severity="information",
+                timeout=5,
+            )
+            # Refresh status bar
+            status_bar = self.query_one("#status-bar", StatusBar)
+            status_bar.refresh_status()
+        else:
+            self.notify(
+                f"⚠️ {msg}",
+                title="Kill Port",
+                severity="warning",
+            )
 
     def action_select_help(self) -> None:
         """Show comprehensive help."""

@@ -37,7 +37,13 @@ param(
     [string]$Password,
 
     [Parameter(Mandatory=$false)]
-    [switch]$NoAutoReconnect
+    [switch]$NoAutoReconnect,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$Monitor,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$KillPort
 )
 
 # Configuration
@@ -152,17 +158,38 @@ if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
 # Check if port is already in use
 $PortInUse = Get-NetTCPConnection -LocalPort $LocalPort -ErrorAction SilentlyContinue
 if ($PortInUse) {
+    $processIds = $PortInUse.OwningProcess | Sort-Object -Unique | Where-Object { $_ -ne 0 }
     Write-Host "⚠️  WARNING: Port $LocalPort is already in use!" -ForegroundColor Yellow
-    Write-Host "   Process: $($PortInUse.OwningProcess)" -ForegroundColor Gray
+    Write-Host "   Process IDs: $($processIds -join ', ')" -ForegroundColor Gray
     Write-Host ""
-    $Response = Read-Host "Kill existing process and continue? (y/n)"
-    if ($Response -eq 'y') {
-        Stop-Process -Id $PortInUse.OwningProcess -Force
-        Write-Host "✅ Process killed" -ForegroundColor Green
+    
+    if ($KillPort) {
+        # Auto-kill without prompting
+        foreach ($procId in $processIds) {
+            try {
+                Stop-Process -Id $procId -Force -ErrorAction Stop
+                Write-Host "✅ Killed process $procId" -ForegroundColor Green
+            } catch {
+                Write-Host "⚠️  Could not kill process $procId (may require admin): $_" -ForegroundColor Yellow
+            }
+        }
         Start-Sleep -Seconds 2
     } else {
-        Write-Host "❌ Exiting..." -ForegroundColor Red
-        exit 1
+        $Response = Read-Host "Kill existing process and continue? (y/n)"
+        if ($Response -eq 'y') {
+            foreach ($procId in $processIds) {
+                try {
+                    Stop-Process -Id $procId -Force -ErrorAction Stop
+                    Write-Host "✅ Killed process $procId" -ForegroundColor Green
+                } catch {
+                    Write-Host "⚠️  Could not kill process $procId (may require admin): $_" -ForegroundColor Yellow
+                }
+            }
+            Start-Sleep -Seconds 2
+        } else {
+            Write-Host "❌ Exiting..." -ForegroundColor Red
+            exit 1
+        }
     }
 }
 
@@ -184,6 +211,19 @@ foreach ($loc in $plinkLocations) {
     }
 }
 
+# Function to test if port is accessible
+function Test-TunnelPort {
+    param([int]$Port)
+    try {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $tcp.Connect("localhost", $Port)
+        $tcp.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 # Connection attempt counter
 $AttemptCount = 0
 $LastConnectTime = Get-Date
@@ -197,33 +237,151 @@ while ($true) {
         Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
         Write-Host "Attempt #$AttemptCount - Connecting..." -ForegroundColor Green
 
-        if ($usePlink) {
-            # Use plink with -pw parameter (PuTTY syntax, not OpenSSH)
-            & $plinkPath -ssh -batch `
-                -hostkey "SHA256:5XgC3h/+waae885A5/IORHon1HPf3QLQXbF84V+mj0Y" `
-                -L "${LocalPort}:localhost:${RemotePort}" `
-                -pw "$Password" `
-                "${MacUser}@${MacIP}" -N
+        if ($Monitor) {
+            # Monitor mode: Run SSH as background process and show status updates
+            # NOTE: SSH process is wrapped in try/finally to ensure cleanup on Ctrl+C
+            $sshProcess = $null
+
+            try {
+            if ($usePlink) {
+                $sshProcess = Start-Process -FilePath $plinkPath -ArgumentList @(
+                    "-ssh", "-batch",
+                    "-hostkey", "SHA256:5XgC3h/+waae885A5/IORHon1HPf3QLQXbF84V+mj0Y",
+                    "-L", "${LocalPort}:localhost:${RemotePort}",
+                    "-pw", "$Password",
+                    "${MacUser}@${MacIP}", "-N"
+                ) -PassThru -WindowStyle Hidden
+            } else {
+                # SECURITY NOTE: StrictHostKeyChecking=no disables MITM protection for convenience.
+                # This is acceptable for a personal development tool on a trusted local network.
+                # For production or untrusted networks, use proper host key management instead.
+                $sshProcess = Start-Process -FilePath "ssh" -ArgumentList @(
+                    "-o", "ServerAliveInterval=60",
+                    "-o", "ServerAliveCountMax=3",
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "ExitOnForwardFailure=yes",
+                    "-L", "${LocalPort}:localhost:${RemotePort}",
+                    "${MacUser}@${MacIP}", "-N"
+                ) -PassThru -WindowStyle Hidden
+            }
+            
+            # Wait for connection to establish
+            Start-Sleep -Seconds 2
+            
+            if ($sshProcess.HasExited) {
+                throw "SSH process exited immediately"
+            }
+            
+            Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
+            Write-Host "✅ Connected! Starting live monitor..." -ForegroundColor Green
+            Write-Host ""
+            Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+            Write-Host "    LIVE ACTIVITY MONITOR" -ForegroundColor Cyan
+            # NOTE: 5-second polling interval balances responsiveness with network overhead.
+            # - Faster (1-2s) would catch issues sooner but increases network traffic.
+            # - Slower (10-15s) reduces overhead but delays issue detection.
+            # - 10-second REST timeout allows for slow API responses under load.
+            Write-Host "    Latency checks every 5s | Press Ctrl+C to stop" -ForegroundColor DarkGray
+            Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+            Write-Host ""
+            
+            # Monitor loop - check latency every 5 seconds
+            $checkCount = 0
+            $totalLatency = 0
+            
+            # Do initial check immediately
+            $Timestamp = Get-Date -Format 'HH:mm:ss'
+            Write-Host ""
+            try {
+                $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                $response = Invoke-RestMethod -Uri "http://localhost:$LocalPort/v1/models" -Method GET -TimeoutSec 10
+                $sw.Stop()
+                $latencyMs = $sw.ElapsedMilliseconds
+                $checkCount++
+                $totalLatency += $latencyMs
+                $modelCount = $response.data.Count
+                Write-Host "  🟢 [$Timestamp] Connected! $modelCount models available (${latencyMs}ms)" -ForegroundColor Green
+            } catch {
+                Write-Host "  🔴 [$Timestamp] Initial check failed - tunnel may still be connecting..." -ForegroundColor Yellow
+            }
+            Write-Host ""
+            
+            while (-not $sshProcess.HasExited) {
+                Start-Sleep -Seconds 5
+                
+                # Show latency check
+                    $Timestamp = Get-Date -Format 'HH:mm:ss'
+                    $checkCount++
+                    
+                    try {
+                        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                        $response = Invoke-RestMethod -Uri "http://localhost:$LocalPort/v1/models" -Method GET -TimeoutSec 10
+                        $sw.Stop()
+                        $latencyMs = $sw.ElapsedMilliseconds
+                        $totalLatency += $latencyMs
+                        $avgLatency = [math]::Round($totalLatency / $checkCount)
+                        $modelCount = $response.data.Count
+                        
+                        $latencyColor = if ($latencyMs -lt 100) { "Green" } elseif ($latencyMs -lt 300) { "Yellow" } else { "Red" }
+                        $statusIcon = if ($latencyMs -lt 100) { "🟢" } elseif ($latencyMs -lt 300) { "🟡" } else { "🔴" }
+                        
+                        Write-Host "  $statusIcon " -NoNewline -ForegroundColor $latencyColor
+                        Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
+                        Write-Host "Latency: " -NoNewline -ForegroundColor White
+                        Write-Host "${latencyMs}ms" -NoNewline -ForegroundColor $latencyColor
+                        Write-Host " (avg: ${avgLatency}ms) | " -NoNewline -ForegroundColor DarkGray
+                        Write-Host "$modelCount models" -ForegroundColor Cyan
+                    } catch {
+                        Write-Host "  🔴 [$Timestamp] Request failed: $($_.Exception.Message)" -ForegroundColor Red
+                    }
+                }
+
+            # Process exited
+            Write-Host ""
+
+            } finally {
+                # Cleanup: ensure SSH process is terminated on script exit or Ctrl+C
+                if ($null -ne $sshProcess -and -not $sshProcess.HasExited) {
+                    Write-Host "  🧹 Cleaning up SSH process (PID: $($sshProcess.Id))..." -ForegroundColor Yellow
+                    try {
+                        $sshProcess.Kill()
+                        $sshProcess.WaitForExit(3000)
+                    } catch {
+                        # Process may have already exited
+                    }
+                }
+            }
+
         } else {
-            # Fallback to sshpass if available, otherwise prompt
-            if (Get-Command sshpass -ErrorAction SilentlyContinue) {
-                sshpass -p "$Password" ssh `
-                    -o "ServerAliveInterval=60" `
-                    -o "ServerAliveCountMax=3" `
-                    -o "StrictHostKeyChecking=no" `
-                    -o "UserKnownHostsFile=/dev/null" `
-                    -o "ExitOnForwardFailure=yes" `
+            # Non-monitor mode: Run SSH in foreground (blocking)
+            if ($usePlink) {
+                & $plinkPath -ssh -batch `
+                    -hostkey "SHA256:5XgC3h/+waae885A5/IORHon1HPf3QLQXbF84V+mj0Y" `
                     -L "${LocalPort}:localhost:${RemotePort}" `
+                    -pw "$Password" `
                     "${MacUser}@${MacIP}" -N
             } else {
-                # Regular SSH (will prompt for password each time)
-                ssh -o "ServerAliveInterval=60" `
-                    -o "ServerAliveCountMax=3" `
-                    -o "StrictHostKeyChecking=no" `
-                    -o "UserKnownHostsFile=/dev/null" `
-                    -o "ExitOnForwardFailure=yes" `
-                    -L "${LocalPort}:localhost:${RemotePort}" `
-                    "${MacUser}@${MacIP}" -N
+                if (Get-Command sshpass -ErrorAction SilentlyContinue) {
+                    sshpass -p "$Password" ssh `
+                        -o "ServerAliveInterval=60" `
+                        -o "ServerAliveCountMax=3" `
+                        -o "StrictHostKeyChecking=no" `
+                        -o "UserKnownHostsFile=/dev/null" `
+                        -o "ExitOnForwardFailure=yes" `
+                        -L "${LocalPort}:localhost:${RemotePort}" `
+                        "${MacUser}@${MacIP}" -N
+                } else {
+                    # SECURITY NOTE: StrictHostKeyChecking=no disables MITM protection for convenience.
+                    # See comment above for rationale.
+                    ssh -o "ServerAliveInterval=60" `
+                        -o "ServerAliveCountMax=3" `
+                        -o "StrictHostKeyChecking=no" `
+                        -o "UserKnownHostsFile=/dev/null" `
+                        -o "ExitOnForwardFailure=yes" `
+                        -L "${LocalPort}:localhost:${RemotePort}" `
+                        "${MacUser}@${MacIP}" -N
+                }
             }
         }
 
