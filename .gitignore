@@ -31,3 +31,7 @@ configs/a0-backup-*.json
 # Serena cache
 .serena/__pycache__/
 vibeproxy-config.json
+
+# Archive folder (local cleanup, not committed)
+.archive/
+misc/

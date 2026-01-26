@@ -1,0 +1,10 @@
+{
+  "_comment": "Auto-generated for gemini-3-flash-preview via github-copilot",
+  "chat": {
+    "model": "gemini-3-flash-preview",
+    "api_base": "http://host.docker.internal:8317/v1"
+  },
+  "chat_model_kwargs": {
+    "temperature": "0"
+  }
+}

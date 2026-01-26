@@ -526,7 +526,7 @@ class TunnelManager:
                 "powershell",
                 "-NoExit",
                 "-Command",
-                f"$host.UI.RawUI.WindowTitle = 'VibeProxy SSH Tunnel'; python '{script_path}'",
+                f"$host.UI.RawUI.WindowTitle = 'VibeProxy SSH Tunnel'; python '{script_path}' --monitor",
             ]
 
             # Launch the process in a new console window

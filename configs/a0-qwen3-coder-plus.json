@@ -1,0 +1,10 @@
+{
+  "_comment": "Auto-generated for qwen3-coder-plus via qwen",
+  "chat": {
+    "model": "qwen3-coder-plus",
+    "api_base": "http://host.docker.internal:8317/v1"
+  },
+  "chat_model_kwargs": {
+    "temperature": "0"
+  }
+}

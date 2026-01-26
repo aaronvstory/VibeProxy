@@ -1,38 +1,46 @@
-# VibeProxy Setup for Windows + Mac
+# VibeProxy-Windows
 
-Use your **Claude Code** and **ChatGPT/Codex** subscriptions in Factory Droid on Windows by running VibeProxy on your MacBook with an SSH tunnel.
+> **Fork of [automazeio/vibeproxy](https://github.com/automazeio/vibeproxy)** focused on Windows integration, Agent Zero (A0), and Droid CLI management.
+
+Use your **Claude Code** and **ChatGPT/Codex** subscriptions on Windows by tunneling to VibeProxy running on your Mac.
 
 ## 🎯 What This Does
 
-- **Problem:** Factory Droid requires API keys → pay-per-token billing
+- **Problem:** AI tools on Windows need API keys → pay-per-token billing
 - **Solution:** VibeProxy bridges your subscriptions → use existing Claude Code/ChatGPT Plus/Pro access
-- **Catch:** VibeProxy is macOS-only (M1+ required)
-- **Fix:** Run on Mac, tunnel to Windows via SSH (this guide!)
+- **This repo:** Windows-side management tools, configs, and integration with Agent Zero + Droid CLI
 
 ## 🚀 Quick Start
 
-**New to this?** → Read [QUICK_START.md](QUICK_START.md) for 5-minute setup
-**Want details?** → Read [SETUP_GUIDE.md](SETUP_GUIDE.md) for complete instructions
+```powershell
+# Launch the main manager CLI
+.\VibeProxy-Manager.ps1
+```
 
-## 📂 What's Included
+This gives you a menu to: start SSH tunnel, browse models, switch A0 configs, test connectivity, manage Droid models.
 
-This directory contains everything you need:
+**Detailed guides:** See `docs/VIBEPROXY-QUICKSTART.md` and `docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md`
 
-### Documentation
-- **QUICK_START.md** - 5-minute setup guide
-- **SETUP_GUIDE.md** - Complete installation & troubleshooting
-- **README.md** - This file
+## 📂 Key Files
 
-### Windows Scripts
-- **ssh-tunnel-vibeproxy.ps1** - Auto-reconnecting SSH tunnel
-- **test-connection.ps1** - Verify tunnel is working
+### Launchers
+- **VibeProxy-Manager.ps1** - All-in-one CLI manager (tunnel, models, configs, testing)
+- **start-tui.bat** - Launch Python TUI with auto-tunnel (alternative interface)
+
+### Scripts
+- **ssh-tunnel-intelligent.py** - Smart tunnel with auto-reconnect and Mac discovery
+- **ssh-tunnel-vibeproxy.ps1** - PowerShell tunnel script
+- **scripts/** - Additional utilities (sync models, test connection, etc.)
 
 ### Configuration
-- **vibeproxy-config.example.json** - Example config (copy to `vibeproxy-config.json` and edit)
-- **factory-config-example.json** - Copy to `~/.factory/config.json`
+- **vibeproxy-config.json** - Your Mac IP, SSH credentials, favorites (gitignored)
+- **configs/a0-*.json** - Agent Zero model presets
+- **factory-config-example.json** - Template for `~/.factory/config.json`
 
-### Mac Scripts
-- **mac-vibeproxy-status.sh** - Check VibeProxy status (copy to Mac)
+### Documentation
+- **docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md** - Comprehensive integration guide
+- **docs/VIBEPROXY-QUICKSTART.md** - Quick setup reference
+- **CLAUDE.md** - AI assistant instructions for this codebase
 
 ## 🎬 Setup Overview
 
@@ -87,9 +95,9 @@ droid
 **Quick diagnostics:**
 ```powershell
 # On Windows
-.\test-connection.ps1
+.\scripts\test-connection.ps1
 
-# On Mac (copy mac-vibeproxy-status.sh first)
+# On Mac (copy scripts/mac/mac-vibeproxy-status.sh first)
 ~/vibeproxy-status.sh
 ```
 
@@ -98,7 +106,7 @@ droid
 - Unauthorized → Check VibeProxy provider status on Mac
 - Wrong IP → Verify Mac IP with `ipconfig getifaddr en0`
 
-See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed troubleshooting.
+See [docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md](docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md) for detailed troubleshooting.
 
 ## 📚 Requirements
 
@@ -125,7 +133,7 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed troubleshooting.
 
 ## 💡 Pro Tips
 
-1. **Skip password prompts:** Set up SSH key authentication (see SETUP_GUIDE.md)
+1. **Skip password prompts:** Set up SSH key authentication
 2. **Auto-start tunnel:** Add script to Windows startup folder
 3. **Monitor logs:** `tail -f ~/Library/Logs/VibeProxy/vibeproxy.log` on Mac
 
@@ -152,10 +160,10 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed troubleshooting.
 
 ## ❓ Questions?
 
-1. **First time?** → [QUICK_START.md](QUICK_START.md)
-2. **Need details?** → [SETUP_GUIDE.md](SETUP_GUIDE.md)
-3. **Still stuck?** → Run diagnostics and check guide's troubleshooting section
+1. **First time?** → [docs/VIBEPROXY-QUICKSTART.md](docs/VIBEPROXY-QUICKSTART.md)
+2. **Full reference** → [docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md](docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md)
+3. **A0 Issues?** → [docs/A0-VIBEPROXY-FIXES.md](docs/A0-VIBEPROXY-FIXES.md)
 
 ---
 
-**Ready to start?** → Open [QUICK_START.md](QUICK_START.md)!
+**Ready to start?** → Run `.\VibeProxy-Manager.ps1`!

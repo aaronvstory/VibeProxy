@@ -1,0 +1,10 @@
+{
+  "_comment": "Auto-generated for gemini-2.5-flash via google",
+  "chat": {
+    "model": "gemini-2.5-flash",
+    "api_base": "http://host.docker.internal:8317/v1"
+  },
+  "chat_model_kwargs": {
+    "temperature": "0"
+  }
+}

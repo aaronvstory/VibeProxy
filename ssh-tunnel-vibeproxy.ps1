@@ -82,7 +82,7 @@ function Get-Config {
 
 function Save-Config {
     param($Config)
-    $Config | ConvertTo-Json | Set-Content $ConfigPath
+    $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
 }
 
 # Load config and apply defaults

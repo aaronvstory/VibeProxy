@@ -1,0 +1,10 @@
+{
+  "_comment": "Auto-generated for claude-3-7-sonnet-20250219 via anthropic",
+  "chat": {
+    "model": "claude-3-7-sonnet-20250219",
+    "api_base": "http://host.docker.internal:8317/v1"
+  },
+  "chat_model_kwargs": {
+    "temperature": "0"
+  }
+}

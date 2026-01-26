@@ -1,0 +1,10 @@
+{
+  "_comment": "Auto-generated for gpt-5-codex-mini via openai",
+  "chat": {
+    "model": "gpt-5-codex-mini",
+    "api_base": "http://host.docker.internal:8317/v1"
+  },
+  "chat_model_kwargs": {
+    "temperature": "1"
+  }
+}

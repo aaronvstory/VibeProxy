@@ -145,6 +145,30 @@ function Get-ProviderFromModelId {
     return "Other"
 }
 
+function Get-FriendlyProviderName {
+    <#
+    .SYNOPSIS
+        Maps VibeProxy owner field to friendly display name
+    .PARAMETER Owner
+        The owned_by field from VibeProxy API (e.g., "anthropic", "openai")
+    #>
+    param([string]$Owner)
+
+    if ([string]::IsNullOrWhiteSpace($Owner)) { return "Unknown" }
+
+    # Map VibeProxy owners to friendly names
+    switch -Regex ($Owner) {
+        "anthropic" { return "Claude (Anthropic)" }
+        "openai"    { return "OpenAI" }
+        "google"    { return "Gemini (Google)" }
+        "xai"       { return "Grok (xAI)" }
+        "github"    { return "GitHub Copilot" }
+        "meta"      { return "Meta Llama" }
+        "mistral"   { return "Mistral AI" }
+        default     { return $Owner }  # Fallback to raw value
+    }
+}
+
 function Write-ModelInfoPanel {
     <#
     .SYNOPSIS
@@ -285,7 +309,7 @@ function Write-Toast {
         [string]$Message,
         [ValidateSet("Success", "Warning", "Error", "Info")]
         [string]$Type = "Info",
-        [int]$DurationMs = 1000  # Reduced from 2000 to avoid UI blocking
+        [int]$DurationMs = 500  # Reduced from 1000 for faster UX, avoid UI blocking
     )
 
     $color = switch ($Type) {
@@ -397,6 +421,47 @@ $Script:AvailableModels = @{
 # Helper Functions
 # ═══════════════════════════════════════════════════════════════════════
 
+function Test-FileHasBOM {
+    <#
+    .SYNOPSIS
+        Tests if a file has a UTF-8 BOM (Byte Order Mark)
+
+    .DESCRIPTION
+        Checks the first 3 bytes of a file to detect UTF-8 BOM (0xEF 0xBB 0xBF).
+        Files with BOM will cause JSON parsing errors in Python/Node.js.
+
+    .PARAMETER Path
+        Path to the file to check
+
+    .RETURNS
+        $true if BOM is detected, $false otherwise
+
+    .EXAMPLE
+        Test-FileHasBOM "C:\path\to\file.json"
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        Write-Warning "File not found: $Path"
+        return $false
+    }
+
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        if ($bytes.Length -ge 3) {
+            return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+        }
+        return $false
+    }
+    catch {
+        Write-Warning "Error reading file: $_"
+        return $false
+    }
+}
+
 function Write-Banner {
     Clear-Host
     Write-Host ""
@@ -482,18 +547,43 @@ function Get-ConfigOptions {
         $apiBase = ""
         try {
             $cfg = Get-Content $file.FullName -Raw | ConvertFrom-Json
-            $provider = $cfg.chat_model_provider
-            $model = $cfg.chat_model_name
-            $apiBase = $cfg.chat_model_api_base
+
+            # Try NEW nested format first
+            if ($cfg.chat) {
+                $model = $cfg.chat.model
+                $apiBase = $cfg.chat.api_base
+                $provider = $cfg.chat.provider
+            }
+
+            # Fallback to OLD flat format
+            if (-not $model -and $cfg.chat_model_name) {
+                $provider = $cfg.chat_model_provider
+                $model = $cfg.chat_model_name
+                $apiBase = $cfg.chat_model_api_base
+            }
         } catch {
             # Ignore config parse errors.
         }
 
         $mode = "Unknown"
         if ($apiBase -like "*host.docker.internal*" -or $apiBase -like "*localhost:8317*") {
-            $mode = "VibeProxy"
-        } elseif ($provider) {
-            $mode = $provider
+            # For VibeProxy models, try multi-level fallback:
+            # 1. Try API (if tunnel is running)
+            $owner = Get-ModelOwner $model
+            if ($owner) {
+                $mode = Get-FriendlyProviderName $owner
+            }
+            # 2. Fallback to pattern-based detection from model ID
+            elseif ($model) {
+                $mode = Get-ProviderFromModelId $model
+            }
+            # 3. Final fallback to generic "VibeProxy"
+            else {
+                $mode = "VibeProxy"
+            }
+        } elseif ($provider -and $provider -ne "other") {
+            # For non-VibeProxy configs, map provider to friendly name
+            $mode = Get-FriendlyProviderName $provider
         }
 
         $modelLabel = $model
@@ -551,7 +641,7 @@ function Save-DisabledModels {
 
     if (-not $cfg) { $cfg = [pscustomobject]@{} }
     $cfg | Add-Member -NotePropertyName "DisabledModels" -NotePropertyValue $DisabledModels -Force
-    $cfg | ConvertTo-Json -Depth 8 | Set-Content $Script:ConfigPath
+    $cfg | ConvertTo-Json -Depth 8 | Set-Content $Script:ConfigPath -Encoding UTF8
 }
 
 function Get-FactoryConfigPath {
@@ -625,7 +715,7 @@ function Update-FactoryConfigModel {
 
     # Put selected model first for quick access in other CLIs (e.g., droid-cli)
     $config.custom_models = @($existing) + $updatedList
-    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding UTF8
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -678,7 +768,7 @@ function Remove-DroidCustomModel {
         $newCount = $config.custom_models.Count
 
         if ($newCount -lt $originalCount) {
-            $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+            $config | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding UTF8
             Write-Host "✅ Removed model: $ModelId" -ForegroundColor $Script:Theme.Success
             return $true
         } else {
@@ -761,7 +851,7 @@ function Sync-VibeProxyToDroid {
         }
     }
 
-    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding UTF8
     Write-Host "✅ Synced $($models.data.Count) models to Droid config" -ForegroundColor $Script:Theme.Success
     Write-Host "   Added: $addedCount | Updated: $updatedCount" -ForegroundColor $Script:Theme.Dim
     return $true
@@ -786,7 +876,7 @@ function Clear-DroidCustomModels {
 
     $previousCount = if ($config.custom_models) { $config.custom_models.Count } else { 0 }
     $config | Add-Member -NotePropertyName "custom_models" -NotePropertyValue @() -Force
-    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath
+    $config | ConvertTo-Json -Depth 8 | Set-Content $configPath -Encoding UTF8
 
     Write-Host "✅ Cleared all custom models from Droid config" -ForegroundColor $Script:Theme.Success
     Write-Host "   Removed: $previousCount models" -ForegroundColor $Script:Theme.Dim
@@ -944,7 +1034,7 @@ function Save-Favorites {
     }
 
     $cfg | Add-Member -NotePropertyName "Favorites" -NotePropertyValue $Favorites -Force
-    $cfg | ConvertTo-Json -Depth 8 | Set-Content $Script:ConfigPath
+    $cfg | ConvertTo-Json -Depth 8 | Set-Content $Script:ConfigPath -Encoding UTF8
     Refresh-VibeProxyConfig
 }
 
@@ -970,7 +1060,7 @@ function Set-MaxTokens {
 
     if (-not $cfg) { $cfg = [pscustomobject]@{} }
     $cfg | Add-Member -NotePropertyName "MaxTokens" -NotePropertyValue $Tokens -Force
-    $cfg | ConvertTo-Json -Depth 8 | Set-Content $Script:ConfigPath
+    $cfg | ConvertTo-Json -Depth 8 | Set-Content $Script:ConfigPath -Encoding UTF8
     Refresh-VibeProxyConfig
 }
 
@@ -1014,6 +1104,31 @@ function Apply-ModelTempRules {
         if ($model -and $model -like "gpt-5*") {
             if (-not $Cfg.$($m.Kw)) { $Cfg | Add-Member -NotePropertyName $m.Kw -NotePropertyValue @{} -Force }
             $Cfg.$($m.Kw).temperature = "1"
+        }
+    }
+}
+
+function Apply-ProviderRules {
+    param($Cfg)
+
+    # If using VibeProxy (api_base contains 8317), ensure provider is set to "other"
+    # This fixes "unknown provider" errors when LiteLLM tries to auto-detect
+
+    if ($Cfg.chat_model_api_base -and $Cfg.chat_model_api_base -like "*8317*") {
+        if (-not $Cfg.chat_model_provider) {
+            $Cfg | Add-Member -NotePropertyName "chat_model_provider" -NotePropertyValue "other" -Force
+        }
+    }
+
+    if ($Cfg.util_model_api_base -and $Cfg.util_model_api_base -like "*8317*") {
+        if (-not $Cfg.util_model_provider) {
+            $Cfg | Add-Member -NotePropertyName "util_model_provider" -NotePropertyValue "other" -Force
+        }
+    }
+
+    if ($Cfg.browser_model_api_base -and $Cfg.browser_model_api_base -like "*8317*") {
+        if (-not $Cfg.browser_model_provider) {
+            $Cfg | Add-Member -NotePropertyName "browser_model_provider" -NotePropertyValue "other" -Force
         }
     }
 }
@@ -1264,7 +1379,7 @@ function Ensure-ConfigForModel {
     $name = Normalize-ConfigName $ModelId
     $fileName = "a0-$name.json"
     $targetPath = Join-Path $Script:ConfigDir $fileName
-    $cfg | ConvertTo-Json -Depth 10 | Set-Content $targetPath
+    $cfg | ConvertTo-Json -Depth 10 | Set-Content $targetPath -Encoding UTF8
 
     return $name
 }
@@ -1344,9 +1459,9 @@ function Get-TunnelStatus {
     if ($Script:TunnelPID -ne $null) {
         $process = Get-Process -Id $Script:TunnelPID -ErrorAction SilentlyContinue
         if ($null -eq $process) {
-            # Process is dead - clear tracking
+            # Process is dead - clear tracking and continue to port check
             $Script:TunnelPID = $null
-            return $false
+            # Don't return false here - let it fall through to port check below
         }
     }
 
@@ -1592,7 +1707,7 @@ function Start-Tunnel {
         # Use ssh-tunnel-intelligent.py for better error handling
         $intelligentScript = Join-Path $PSScriptRoot "ssh-tunnel-intelligent.py"
         if (Test-Path $intelligentScript) {
-            $proc = Start-Process powershell -ArgumentList "-NoExit", "-Command", "python '$intelligentScript'" -PassThru
+            $proc = Start-Process powershell -ArgumentList "-NoExit", "-Command", "python '$intelligentScript' --monitor" -PassThru
             $Script:TunnelPID = $proc.Id
             Write-Host "✅ Intelligent tunnel launcher started (PID: $($proc.Id))" -ForegroundColor $Script:Theme.Success
         } else {
@@ -1691,6 +1806,7 @@ function Switch-A0Config {
     $owner = Get-ModelOwner $newConfig.chat_model_name
     Apply-ModelOwnerRules $newConfig $owner
     Apply-ModelTempRules $newConfig
+    Apply-ProviderRules $newConfig
 
     # Read current full settings with -Raw and error handling
     if (-not (Test-Path $Script:A0SettingsPath)) {
@@ -1909,7 +2025,10 @@ function Show-ConfigMenu {
         $idx = [int]$choice
         if ($idx -ge 1 -and $idx -le $configs.Count) {
             $selected = $configs[$idx - 1]
-            Switch-A0Config $selected.Name
+            $switchResult = Switch-A0Config $selected.Name
+            if ($switchResult -ne $false) {
+                Write-Toast -Message "Switched to: $($selected.Name)" -Type "Success"
+            }
         } else {
             Write-Host "Invalid selection" -ForegroundColor $Script:Theme.Error
         }
@@ -2165,8 +2284,11 @@ function Show-AllModels {
             }
             continue
         }
-        if ($choice -eq "f") {
-            $favInput = Read-Host "Favorite toggle - model number"
+        if ($choice -match "^f\s*(\d+)?$") {
+            $favInput = $Matches[1]
+            if ([string]::IsNullOrWhiteSpace($favInput)) {
+                $favInput = Read-Host "Favorite toggle - enter number"
+            }
             if ($favInput -match "^\d+$") {
                 $favIndex = [int]$favInput
                 if ($indexMap.ContainsKey($favIndex)) {
@@ -2185,8 +2307,11 @@ function Show-AllModels {
             }
             continue
         }
-        if ($choice -eq "p") {
-            $pickInput = Read-Host "Pick model - model number"
+        if ($choice -match "^p\s*(\d+)?$") {
+            $pickInput = $Matches[1]
+            if ([string]::IsNullOrWhiteSpace($pickInput)) {
+                $pickInput = Read-Host "Pick model - enter number"
+            }
             if ($pickInput -match "^\d+$") {
                 $pickIndex = [int]$pickInput
                 if ($indexMap.ContainsKey($pickIndex)) {
@@ -2219,8 +2344,11 @@ function Show-AllModels {
             }
             continue
         }
-        if ($choice -eq "x") {
-            $testInput = Read-Host "Test model - model number"
+        if ($choice -match "^x\s*(\d+)?$") {
+            $testInput = $Matches[1]
+            if ([string]::IsNullOrWhiteSpace($testInput)) {
+                $testInput = Read-Host "Test model - enter number"
+            }
             if ($testInput -match "^\d+$") {
                 $testIndex = [int]$testInput
                 if ($indexMap.ContainsKey($testIndex)) {
