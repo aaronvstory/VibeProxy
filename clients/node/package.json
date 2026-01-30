@@ -1,0 +1,44 @@
+{
+  "name": "vibeproxy-client",
+  "version": "1.0.0",
+  "description": "Node.js client for VibeProxy - OpenAI-compatible API for Claude, GPT, Gemini, and more",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "example:basic": "node examples/basic-chat.js",
+    "example:streaming": "node examples/streaming.js",
+    "example:multi-turn": "node examples/multi-turn.js"
+  },
+  "keywords": [
+    "vibeproxy",
+    "openai",
+    "claude",
+    "gpt",
+    "gemini",
+    "llm",
+    "ai",
+    "chat",
+    "streaming"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/VibeProxy"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {}
+}
