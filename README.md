@@ -33,7 +33,7 @@ This gives you a menu to: start SSH tunnel, browse models, switch A0 configs, te
 - **scripts/** - Additional utilities (sync models, test connection, etc.)
 
 ### Configuration
-- **vibeproxy-config.json** - Your Mac IP, SSH credentials, favorites (gitignored)
+- **vibeproxy-config.json** - Your Mac IP, SSH key path, favorites (gitignored)
 - **configs/a0-*.json** - Agent Zero model presets
 - **factory-config-example.json** - Template for `~/.factory/config.json`
 
@@ -131,11 +131,26 @@ See [docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md](docs/VIBEPROXY-LLM-INTEGRATION-GUI
 - **Factory CLI Docs:** https://docs.factory.ai/cli
 - **Port Used:** 8317 (VibeProxy local server)
 
+## 🔐 SSH Key Setup (Required)
+
+SSH key authentication is required for security. One-time setup:
+
+```powershell
+# 1. Generate a new SSH key
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\vibeproxy_key"
+
+# 2. Copy public key to your Mac (enter Mac password once when prompted)
+type "$env:USERPROFILE\.ssh\vibeproxy_key.pub" | ssh user@mac-ip "cat >> ~/.ssh/authorized_keys"
+
+# 3. Run the tunnel script - it will auto-detect your key
+.\ssh-tunnel-vibeproxy.ps1
+```
+
 ## 💡 Pro Tips
 
-1. **Skip password prompts:** Set up SSH key authentication
-2. **Auto-start tunnel:** Add script to Windows startup folder
-3. **Monitor logs:** `tail -f ~/Library/Logs/VibeProxy/vibeproxy.log` on Mac
+1. **Auto-start tunnel:** Add script to Windows startup folder
+2. **Monitor logs:** `tail -f ~/Library/Logs/VibeProxy/vibeproxy.log` on Mac
+3. **Multiple keys:** Specify with `-KeyPath` parameter or set `SSHKeyPath` in config
 
 ## 🎓 How It Works
 

@@ -3,7 +3,7 @@
   "MacIP": "192.168.1.100",
   "LocalPort": 8317,
   "RemotePort": 8317,
-  "SSHPassword": "",
+  "SSHKeyPath": "",
   "Favorites": [],
   "DisabledModels": [],
   "MaxTokens": 500

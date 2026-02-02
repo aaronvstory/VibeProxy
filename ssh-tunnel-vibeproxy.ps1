@@ -1,23 +1,28 @@
 <#
 .SYNOPSIS
-    Auto-reconnecting SSH tunnel for VibeProxy with password storage
+    Auto-reconnecting SSH tunnel for VibeProxy with key-based authentication
 
 .DESCRIPTION
     Creates an SSH tunnel from Windows to MacBook running VibeProxy.
-    Automatically reconnects if connection drops. Password stored in config.
+    Automatically reconnects if connection drops. Uses SSH key authentication.
 
 .PARAMETER MacUser
-    Your username on the MacBook (default: danielba)
+    Your username on the MacBook (default: from config or danielba)
 
 .PARAMETER MacIP
-    Your MacBook's local IP address (default: 192.168.50.70)
+    Your MacBook's local IP address (default: from config or 192.168.50.70)
 
-.PARAMETER Password
-    SSH password (if not provided, will read from config or prompt)
+.PARAMETER KeyPath
+    Path to SSH private key (default: ~/.ssh/id_ed25519 or ~/.ssh/id_rsa)
 
 .NOTES
     Port: Windows localhost:8317 → Mac localhost:8317
     Keep this window open while using Factory Droid!
+
+    SSH Key Setup (one-time):
+      1. Generate key: ssh-keygen -t ed25519 -f ~/.ssh/vibeproxy_key
+      2. Copy to Mac:  ssh-copy-id -i ~/.ssh/vibeproxy_key.pub user@mac-ip
+      3. Set KeyPath in vibeproxy-config.json or pass -KeyPath parameter
 #>
 
 param(
@@ -34,14 +39,14 @@ param(
     [int]$RemotePort,
 
     [Parameter(Mandatory=$false)]
-    [string]$Password,
+    [string]$KeyPath,
 
     [Parameter(Mandatory=$false)]
     [switch]$NoAutoReconnect,
-    
+
     [Parameter(Mandatory=$false)]
     [switch]$Monitor,
-    
+
     [Parameter(Mandatory=$false)]
     [switch]$KillPort
 )
@@ -53,7 +58,7 @@ $DefaultConfig = [pscustomobject]@{
     MacIP = "192.168.50.70"
     LocalPort = 8317
     RemotePort = 8317
-    SSHPassword = ""
+    SSHKeyPath = ""
 }
 
 # Load or create config
@@ -63,13 +68,15 @@ function Get-Config {
         MacIP = $DefaultConfig.MacIP
         LocalPort = $DefaultConfig.LocalPort
         RemotePort = $DefaultConfig.RemotePort
-        SSHPassword = $DefaultConfig.SSHPassword
+        SSHKeyPath = $DefaultConfig.SSHKeyPath
     }
     if (Test-Path $ConfigPath) {
         try {
             $fileConfig = Get-Content $ConfigPath -Raw | ConvertFrom-Json
             if ($fileConfig) {
                 foreach ($prop in $fileConfig.PSObject.Properties) {
+                    # Skip legacy password field
+                    if ($prop.Name -eq "SSHPassword") { continue }
                     $config | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
                 }
             }
@@ -82,7 +89,39 @@ function Get-Config {
 
 function Save-Config {
     param($Config)
-    $Config | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+    # Remove any legacy password field before saving
+    $cleanConfig = $Config | Select-Object -Property MacUser, MacIP, LocalPort, RemotePort, SSHKeyPath
+    $cleanConfig | ConvertTo-Json | Set-Content $ConfigPath -Encoding UTF8
+}
+
+# Find SSH key
+function Find-SSHKey {
+    param([string]$ExplicitPath)
+
+    # 1. Use explicit path if provided
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        if (Test-Path $ExplicitPath) {
+            return $ExplicitPath
+        }
+        Write-Host "⚠️  Specified key not found: $ExplicitPath" -ForegroundColor Yellow
+    }
+
+    # 2. Check common key locations
+    $sshDir = Join-Path $env:USERPROFILE ".ssh"
+    $keyNames = @(
+        "vibeproxy_key",     # Project-specific key (preferred)
+        "id_ed25519",        # Modern default
+        "id_rsa"             # Legacy default
+    )
+
+    foreach ($keyName in $keyNames) {
+        $keyPath = Join-Path $sshDir $keyName
+        if (Test-Path $keyPath) {
+            return $keyPath
+        }
+    }
+
+    return $null
 }
 
 # Load config and apply defaults
@@ -92,29 +131,32 @@ if ([string]::IsNullOrWhiteSpace($MacIP)) { $MacIP = $config.MacIP }
 if (-not $LocalPort -or $LocalPort -le 0) { $LocalPort = [int]$config.LocalPort }
 if (-not $RemotePort -or $RemotePort -le 0) { $RemotePort = [int]$config.RemotePort }
 
-$passwordUpdated = $false
+# Find SSH key
+$resolvedKeyPath = Find-SSHKey -ExplicitPath $(if ([string]::IsNullOrWhiteSpace($KeyPath)) { $config.SSHKeyPath } else { $KeyPath })
 
-# Get password
-if ([string]::IsNullOrWhiteSpace($Password)) {
-    $savedPassword = $config.SSHPassword
-    if ([string]::IsNullOrWhiteSpace($savedPassword)) {
-        Write-Host ""
-        Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-        Write-Host "                   VibeProxy SSH Tunnel - Auto-Reconnect                       " -ForegroundColor Cyan
-        Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-        Write-Host ""
-        $securePassword = Read-Host "Enter SSH password for $MacUser@$MacIP" -AsSecureString
-        $Password = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
-
-        # Save password
-        $passwordUpdated = $true
-        Write-Host "✓ Password saved for future sessions" -ForegroundColor Green
-    } else {
-        $Password = $savedPassword
-    }
-} else {
-    $passwordUpdated = $true
+if ([string]::IsNullOrWhiteSpace($resolvedKeyPath)) {
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+    Write-Host "                   SSH KEY REQUIRED - Setup Instructions                        " -ForegroundColor Red
+    Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  No SSH key found. Key-based authentication is required for security." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Quick Setup (run in PowerShell):" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "    # 1. Generate a new key (press Enter for defaults):" -ForegroundColor White
+    Write-Host '    ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\vibeproxy_key"' -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "    # 2. Copy public key to your Mac:" -ForegroundColor White
+    Write-Host "    type `$env:USERPROFILE\.ssh\vibeproxy_key.pub | ssh $MacUser@$MacIP `"cat >> ~/.ssh/authorized_keys`"" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "    # 3. Re-run this script" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Or specify an existing key:" -ForegroundColor Cyan
+    Write-Host "    .\ssh-tunnel-vibeproxy.ps1 -KeyPath `"C:\path\to\your\key`"" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════════════════════════" -ForegroundColor Red
+    exit 1
 }
 
 # Persist config updates if needed
@@ -123,7 +165,7 @@ if ($config.MacUser -ne $MacUser) { $config.MacUser = $MacUser; $updated = $true
 if ($config.MacIP -ne $MacIP) { $config.MacIP = $MacIP; $updated = $true }
 if ($config.LocalPort -ne $LocalPort) { $config.LocalPort = $LocalPort; $updated = $true }
 if ($config.RemotePort -ne $RemotePort) { $config.RemotePort = $RemotePort; $updated = $true }
-if ($passwordUpdated -or ($config.SSHPassword -ne $Password)) { $config.SSHPassword = $Password; $updated = $true }
+if ($config.SSHKeyPath -ne $resolvedKeyPath) { $config.SSHKeyPath = $resolvedKeyPath; $updated = $true }
 
 if ($updated -or -not (Test-Path $ConfigPath)) {
     Save-Config $config
@@ -140,7 +182,7 @@ Write-Host "     Mac Target      : $MacUser@$MacIP" -ForegroundColor Gray
 Write-Host "     Local Port      : $LocalPort" -ForegroundColor Gray
 Write-Host "     Remote Port     : $RemotePort" -ForegroundColor Gray
 Write-Host "     Auto-Reconnect  : $(-not $NoAutoReconnect)" -ForegroundColor Gray
-Write-Host "     Password        : (saved)" -ForegroundColor Gray
+Write-Host "     SSH Key         : $resolvedKeyPath" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  💡 Usage Tips:" -ForegroundColor Yellow
 Write-Host "     • Keep this window OPEN while using VibeProxy, Factory Droid, or Agent Zero" -ForegroundColor Gray
@@ -162,7 +204,7 @@ if ($PortInUse) {
     Write-Host "⚠️  WARNING: Port $LocalPort is already in use!" -ForegroundColor Yellow
     Write-Host "   Process IDs: $($processIds -join ', ')" -ForegroundColor Gray
     Write-Host ""
-    
+
     if ($KillPort) {
         # Auto-kill without prompting
         foreach ($procId in $processIds) {
@@ -193,24 +235,6 @@ if ($PortInUse) {
     }
 }
 
-# Check if plink is available (PuTTY's SSH client - better for password auth)
-$usePlink = $false
-$plinkPath = $null
-$plinkLocations = @(
-    "C:\Program Files\PuTTY\plink.exe",
-    "C:\Program Files (x86)\PuTTY\plink.exe",
-    "$env:ProgramFiles\PuTTY\plink.exe",
-    "${env:ProgramFiles(x86)}\PuTTY\plink.exe"
-)
-
-foreach ($loc in $plinkLocations) {
-    if (Test-Path $loc) {
-        $plinkPath = $loc
-        $usePlink = $true
-        break
-    }
-}
-
 # Function to test if port is accessible
 function Test-TunnelPort {
     param([int]$Port)
@@ -237,83 +261,68 @@ while ($true) {
         Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
         Write-Host "Attempt #$AttemptCount - Connecting..." -ForegroundColor Green
 
+        # Build SSH arguments (key-based auth only)
+        $sshArgs = @(
+            "-i", $resolvedKeyPath,
+            "-o", "ServerAliveInterval=60",
+            "-o", "ServerAliveCountMax=3",
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "BatchMode=yes",
+            "-L", "${LocalPort}:localhost:${RemotePort}",
+            "${MacUser}@${MacIP}", "-N"
+        )
+
         if ($Monitor) {
             # Monitor mode: Run SSH as background process and show status updates
-            # NOTE: SSH process is wrapped in try/finally to ensure cleanup on Ctrl+C
             $sshProcess = $null
 
             try {
-            if ($usePlink) {
-                $sshProcess = Start-Process -FilePath $plinkPath -ArgumentList @(
-                    "-ssh", "-batch",
-                    "-hostkey", "SHA256:5XgC3h/+waae885A5/IORHon1HPf3QLQXbF84V+mj0Y",
-                    "-L", "${LocalPort}:localhost:${RemotePort}",
-                    "-pw", "$Password",
-                    "${MacUser}@${MacIP}", "-N"
-                ) -PassThru -WindowStyle Hidden
-            } else {
-                # SECURITY NOTE: StrictHostKeyChecking=no disables MITM protection for convenience.
-                # This is acceptable for a personal development tool on a trusted local network.
-                # For production or untrusted networks, use proper host key management instead.
-                $sshProcess = Start-Process -FilePath "ssh" -ArgumentList @(
-                    "-o", "ServerAliveInterval=60",
-                    "-o", "ServerAliveCountMax=3",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "UserKnownHostsFile=/dev/null",
-                    "-o", "ExitOnForwardFailure=yes",
-                    "-L", "${LocalPort}:localhost:${RemotePort}",
-                    "${MacUser}@${MacIP}", "-N"
-                ) -PassThru -WindowStyle Hidden
-            }
-            
-            # Wait for connection to establish
-            Start-Sleep -Seconds 2
-            
-            if ($sshProcess.HasExited) {
-                throw "SSH process exited immediately"
-            }
-            
-            Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
-            Write-Host "✅ Connected! Starting live monitor..." -ForegroundColor Green
-            Write-Host ""
-            Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-            Write-Host "    LIVE ACTIVITY MONITOR" -ForegroundColor Cyan
-            # NOTE: 5-second polling interval balances responsiveness with network overhead.
-            # - Faster (1-2s) would catch issues sooner but increases network traffic.
-            # - Slower (10-15s) reduces overhead but delays issue detection.
-            # - 10-second REST timeout allows for slow API responses under load.
-            Write-Host "    Latency checks every 5s | Press Ctrl+C to stop" -ForegroundColor DarkGray
-            Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-            Write-Host ""
-            
-            # Monitor loop - check latency every 5 seconds
-            $checkCount = 0
-            $totalLatency = 0
-            
-            # Do initial check immediately
-            $Timestamp = Get-Date -Format 'HH:mm:ss'
-            Write-Host ""
-            try {
-                $sw = [System.Diagnostics.Stopwatch]::StartNew()
-                $response = Invoke-RestMethod -Uri "http://localhost:$LocalPort/v1/models" -Method GET -TimeoutSec 10
-                $sw.Stop()
-                $latencyMs = $sw.ElapsedMilliseconds
-                $checkCount++
-                $totalLatency += $latencyMs
-                $modelCount = $response.data.Count
-                Write-Host "  🟢 [$Timestamp] Connected! $modelCount models available (${latencyMs}ms)" -ForegroundColor Green
-            } catch {
-                Write-Host "  🔴 [$Timestamp] Initial check failed - tunnel may still be connecting..." -ForegroundColor Yellow
-            }
-            Write-Host ""
-            
-            while (-not $sshProcess.HasExited) {
-                Start-Sleep -Seconds 5
-                
-                # Show latency check
+                $sshProcess = Start-Process -FilePath "ssh" -ArgumentList $sshArgs -PassThru -WindowStyle Hidden
+
+                # Wait for connection to establish
+                Start-Sleep -Seconds 2
+
+                if ($sshProcess.HasExited) {
+                    throw "SSH process exited immediately. Check your SSH key and Mac settings."
+                }
+
+                Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
+                Write-Host "✅ Connected! Starting live monitor..." -ForegroundColor Green
+                Write-Host ""
+                Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+                Write-Host "    LIVE ACTIVITY MONITOR" -ForegroundColor Cyan
+                Write-Host "    Latency checks every 5s | Press Ctrl+C to stop" -ForegroundColor DarkGray
+                Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+                Write-Host ""
+
+                # Monitor loop - check latency every 5 seconds
+                $checkCount = 0
+                $totalLatency = 0
+
+                # Do initial check immediately
+                $Timestamp = Get-Date -Format 'HH:mm:ss'
+                Write-Host ""
+                try {
+                    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                    $response = Invoke-RestMethod -Uri "http://localhost:$LocalPort/v1/models" -Method GET -TimeoutSec 10
+                    $sw.Stop()
+                    $latencyMs = $sw.ElapsedMilliseconds
+                    $checkCount++
+                    $totalLatency += $latencyMs
+                    $modelCount = $response.data.Count
+                    Write-Host "  🟢 [$Timestamp] Connected! $modelCount models available (${latencyMs}ms)" -ForegroundColor Green
+                } catch {
+                    Write-Host "  🔴 [$Timestamp] Initial check failed - tunnel may still be connecting..." -ForegroundColor Yellow
+                }
+                Write-Host ""
+
+                while (-not $sshProcess.HasExited) {
+                    Start-Sleep -Seconds 5
+
+                    # Show latency check
                     $Timestamp = Get-Date -Format 'HH:mm:ss'
                     $checkCount++
-                    
+
                     try {
                         $sw = [System.Diagnostics.Stopwatch]::StartNew()
                         $response = Invoke-RestMethod -Uri "http://localhost:$LocalPort/v1/models" -Method GET -TimeoutSec 10
@@ -322,10 +331,10 @@ while ($true) {
                         $totalLatency += $latencyMs
                         $avgLatency = [math]::Round($totalLatency / $checkCount)
                         $modelCount = $response.data.Count
-                        
+
                         $latencyColor = if ($latencyMs -lt 100) { "Green" } elseif ($latencyMs -lt 300) { "Yellow" } else { "Red" }
                         $statusIcon = if ($latencyMs -lt 100) { "🟢" } elseif ($latencyMs -lt 300) { "🟡" } else { "🔴" }
-                        
+
                         Write-Host "  $statusIcon " -NoNewline -ForegroundColor $latencyColor
                         Write-Host "[$Timestamp] " -NoNewline -ForegroundColor Gray
                         Write-Host "Latency: " -NoNewline -ForegroundColor White
@@ -337,8 +346,8 @@ while ($true) {
                     }
                 }
 
-            # Process exited
-            Write-Host ""
+                # Process exited
+                Write-Host ""
 
             } finally {
                 # Cleanup: ensure SSH process is terminated on script exit or Ctrl+C
@@ -355,34 +364,7 @@ while ($true) {
 
         } else {
             # Non-monitor mode: Run SSH in foreground (blocking)
-            if ($usePlink) {
-                & $plinkPath -ssh -batch `
-                    -hostkey "SHA256:5XgC3h/+waae885A5/IORHon1HPf3QLQXbF84V+mj0Y" `
-                    -L "${LocalPort}:localhost:${RemotePort}" `
-                    -pw "$Password" `
-                    "${MacUser}@${MacIP}" -N
-            } else {
-                if (Get-Command sshpass -ErrorAction SilentlyContinue) {
-                    sshpass -p "$Password" ssh `
-                        -o "ServerAliveInterval=60" `
-                        -o "ServerAliveCountMax=3" `
-                        -o "StrictHostKeyChecking=no" `
-                        -o "UserKnownHostsFile=/dev/null" `
-                        -o "ExitOnForwardFailure=yes" `
-                        -L "${LocalPort}:localhost:${RemotePort}" `
-                        "${MacUser}@${MacIP}" -N
-                } else {
-                    # SECURITY NOTE: StrictHostKeyChecking=no disables MITM protection for convenience.
-                    # See comment above for rationale.
-                    ssh -o "ServerAliveInterval=60" `
-                        -o "ServerAliveCountMax=3" `
-                        -o "StrictHostKeyChecking=no" `
-                        -o "UserKnownHostsFile=/dev/null" `
-                        -o "ExitOnForwardFailure=yes" `
-                        -L "${LocalPort}:localhost:${RemotePort}" `
-                        "${MacUser}@${MacIP}" -N
-                }
-            }
+            & ssh @sshArgs
         }
 
     } catch {
@@ -401,14 +383,13 @@ while ($true) {
         Write-Host "  ───────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
         Write-Host "  Possible issues:" -ForegroundColor Yellow
         Write-Host "    1. Mac IP wrong or unreachable: $MacIP" -ForegroundColor Gray
-        Write-Host "    2. SSH not enabled on Mac" -ForegroundColor Gray
-        Write-Host "    3. Firewall blocking connection" -ForegroundColor Gray
+        Write-Host "    2. SSH not enabled on Mac (System Settings → Sharing → Remote Login)" -ForegroundColor Gray
+        Write-Host "    3. SSH key not authorized on Mac (~/.ssh/authorized_keys)" -ForegroundColor Gray
         Write-Host "    4. Wrong username: $MacUser" -ForegroundColor Gray
-        Write-Host "    5. Wrong password (delete vibeproxy-config.json to re-enter)" -ForegroundColor Gray
+        Write-Host "    5. SSH key passphrase required (use ssh-agent)" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  Verify on Mac:" -ForegroundColor Cyan
-        Write-Host "    • System Settings → Sharing → Remote Login = ON" -ForegroundColor Gray
-        Write-Host "    • Terminal: ipconfig getifaddr en0" -ForegroundColor Gray
+        Write-Host "  Test manually:" -ForegroundColor Cyan
+        Write-Host "    ssh -i `"$resolvedKeyPath`" $MacUser@$MacIP" -ForegroundColor Gray
         Write-Host "  ───────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
         Write-Host ""
     } else {

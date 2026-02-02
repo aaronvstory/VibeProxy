@@ -82,7 +82,7 @@ vibeproxy_manager/           # Main Python package
 - Methods: `list_models()`, `chat()`, `preflight()`, `test_connection()`
 
 **ConfigManager** (`config.py`):
-- Manages `vibeproxy-config.json` (SSH credentials, favorites, max_tokens)
+- Manages `vibeproxy-config.json` (SSH key path, favorites, max_tokens)
 - Handles A0 config presets in `configs/a0-*.json`
 - Manages Factory/Droid CLI integration via `~/.factory/config.json`
 - Key paths:
@@ -93,7 +93,7 @@ vibeproxy_manager/           # Main Python package
 - Multi-layer tunnel verification (PID + port check)
 - Auto-discovery: scans network to find Mac when IP changes
 - Smart error classification (IP_CHANGED, SSH_DOWN, AUTH_FAILED)
-- PuTTY auto-install via winget for password auth on Windows
+- Key-based SSH authentication (password auth removed for security)
 
 ### Data Flow
 
@@ -107,7 +107,7 @@ Docker (A0) → host.docker.internal:8317 ────────────�
 
 | File | Purpose |
 |------|---------|
-| `vibeproxy-config.json` | SSH credentials, favorites, settings |
+| `vibeproxy-config.json` | SSH key path, favorites, settings |
 | `configs/a0-*.json` | A0 model presets (created via TUI) |
 | `configs/backups/` | A0 settings backups before changes |
 | `~/.factory/config.json` | Droid CLI custom models |

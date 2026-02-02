@@ -1717,6 +1717,61 @@ class VibeProxyClient:
             return False, str(e)
 ```
 
+### Node.js Client
+
+A full-featured Node.js client is available in the `clients/node/` directory.
+
+**Installation:**
+
+```bash
+cd clients/node
+npm install
+```
+
+**Quick Start:**
+
+```javascript
+import { VibeProxyClient } from 'vibeproxy-client';
+
+const client = new VibeProxyClient();
+
+// Health check
+const health = await client.healthCheck();
+console.log(health.message); // "Healthy (42 models available)"
+
+// Simple chat
+const response = await client.chat([
+  { role: 'user', content: 'Hello!' }
+]);
+console.log(response.content);
+
+// Streaming
+for await (const chunk of client.chatStream([
+  { role: 'user', content: 'Write a haiku' }
+])) {
+  if (chunk.type === 'text') {
+    process.stdout.write(chunk.content);
+  }
+}
+
+// Multi-turn conversation
+await client.conversation('session-1', 'What is 2+2?', {
+  systemPrompt: 'You are a math tutor.'
+});
+await client.conversation('session-1', 'Multiply that by 3');
+```
+
+**Features:**
+
+- OpenAI SDK wrapper for familiar API
+- Streaming support via async generators
+- Auto-temperature selection (GPT-5 = 1, Claude = 0)
+- Multi-turn conversation with history management
+- AbortController support for cancellation
+- Full TypeScript definitions
+
+See `clients/node/README.md` for complete documentation.
+
 ---
 
 ## Troubleshooting

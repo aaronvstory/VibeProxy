@@ -1,6 +1,8 @@
 # VibeProxy Quick Start
 
-> **Validated 2026-01-25** - All examples tested against live VibeProxy
+> **Validated 2026-01-25** — All examples tested against live VibeProxy
+
+---
 
 ## TL;DR
 
@@ -10,7 +12,38 @@ Endpoint:    /v1/chat/completions
 API Key:     Any non-empty string (e.g., "x")
 ```
 
-**One endpoint for ALL models** - Claude, GPT, Gemini, Grok, Qwen.
+**One endpoint for ALL models:** Claude, GPT, Gemini, Grok, Qwen.
+
+---
+
+### Common Commands
+
+- **List models (pretty):**
+  ```bash
+  curl -s http://100.123.126.47:8317/v1/models | jq -r '.data[].id' | sort
+  ```
+
+- **Quick health check:**
+  ```bash
+  curl -s http://100.123.126.47:8317/v1/models | jq -r '"Models: \(.data | length) ✅"'
+  ```
+
+- **Test a chat:**
+  ```bash
+  curl -s http://100.123.126.47:8317/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer vibeproxy" \
+    -d '{"model":"gpt-5.2-codex","messages":[{"role":"user","content":"say hi"}],"max_tokens":20}' \
+    | jq -r '.choices[0].message.content // .error.message'
+  ```
+
+- **Handy script (optional):**
+  - `vibe status` — shows model count & health
+  - `vibe models` — lists all models
+  - `vibe test` — sends a test chat
+  - `vibe test claude-sonnet-4.5` — tests a specific model
+
+  > If `~/bin` isn’t in your `PATH`, either add it or run `~/bin/vibe` directly.
 
 ---
 
@@ -21,13 +54,19 @@ API Key:     Any non-empty string (e.g., "x")
 ```bash
 curl -s http://localhost:8317/v1/models | head -c 100
 ```
-
 **Expected:** JSON starting with `{"data":[{...`
 
-**If "Connection refused":** Start SSH tunnel or check VibeProxy on Mac.
+> **If "Connection refused":** Start the SSH tunnel or check VibeProxy on your Mac.
 
 ### 2. List Available Models
 
+```bash
+# All models
+curl -s http://localhost:8317/v1/models | jq '.data[].id'
+
+# Count models
+curl -s http://localhost:8317/v1/models | jq '.data | length'
+```
 ```bash
 # All models
 curl -s http://localhost:8317/v1/models | jq '.data[].id'

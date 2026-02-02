@@ -1,37 +1,107 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-.venv/
-venv/
-ENV/
-.env
 
-# Temp files
-.tmp_*
-*.log
-*.tmp
-
-# Editor
+# VS Code settings
 .vscode/
-.idea/
-*.swp
-*.swo
+.code-workspace
 
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Config backups with timestamps and secrets (keep templates only)
+# Python virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Environment variables and secrets
+.env
+.env.*
+
+# Logs and history
+*.log
+*.history
+*.bak
+*.swp
+*.swo
+
+# Application state, cache, and session logs
+.claude/
+*.lock
+*.state
+*.pid
+
+# Backup and temp files
+*~
+*.tmp
+*.temp
+*.old
+*.orig
+*.backup
+
+# Compiled files
+*.so
+*.dll
+*.dylib
+*.pyd
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Node modules (if any JS/TS code)
+node_modules/
+
+# Docker artifacts
+*.tar
+*.img
+
+# Ignore model/config backups
 configs/backups/
-configs/a0-backup-*.json
+configs/*.bak
+configs/*.backup
+configs/*.old
 
-# Serena cache
-.serena/__pycache__/
+# Ignore test cache
+tests/__pycache__/
+tests/*.log
+
+# Ignore user-specific config
 vibeproxy-config.json
+factory-config-example.json
 
-# Archive folder (local cleanup, not committed)
+# Ignore SSH tunnel scripts state
+ssh-tunnel-*.log
+ssh-tunnel-*.pid
+
+# Ignore system files
+ehthumbs.db
+Icon?
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.gz
+*.bz2
+*.xz
+*.lz
+*.lzma
+*.cab
+*.iso
+*.img
+
+
+# Ignore all archives and their contents
+archive/
 .archive/
-misc/
+archive/**
+.archive/**
