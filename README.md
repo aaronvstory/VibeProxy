@@ -42,6 +42,12 @@ This gives you a menu to: start SSH tunnel, browse models, switch A0 configs, te
 - **docs/VIBEPROXY-QUICKSTART.md** - Quick setup reference
 - **CLAUDE.md** - AI assistant instructions for this codebase
 
+## 🎯 Supported Clients
+
+- ✅ **Agent Zero (A0)** - See [docs/A0-VIBEPROXY-FIXES.md](docs/A0-VIBEPROXY-FIXES.md)
+- ✅ **Factory Droid CLI** - See main setup guide
+- ✅ **OpenClaw/Clawdbot** - See [docs/OPENCLAW-VIBEPROXY-INTEGRATION.md](docs/OPENCLAW-VIBEPROXY-INTEGRATION.md)
+
 ## 🎬 Setup Overview
 
 ### On MacBook (One-Time):
