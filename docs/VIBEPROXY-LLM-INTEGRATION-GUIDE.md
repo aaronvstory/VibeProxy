@@ -61,30 +61,30 @@ VibeProxy is an OAuth proxy server that bridges AI subscription services (Claude
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         YOUR APPLICATION                             │
+│                         YOUR APPLICATION                            │
 │  (LLM Agent, Chatbot, IDE Plugin, Automation Script)                │
 └─────────────────────────────────────────┬───────────────────────────┘
                                           │ HTTP/HTTPS
                                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    VibeProxy Server (localhost:8317)                 │
-│                                                                      │
+┌────────────────────────────────────────────────────────────────────┐
+│                    VibeProxy Server (localhost:8317)               │
+│                                                                    │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                 ThinkingProxy (Swift)                         │   │
-│  │  - Intercepts requests on port 8317                          │   │
-│  │  - Processes Claude extended thinking suffixes               │   │
-│  │  - Forwards to CLIProxyAPIPlus on port 8318                  │   │
+│  │                 ThinkingProxy (Swift)                       │   │
+│  │  - Intercepts requests on port 8317                         │   │
+│  │  - Processes Claude extended thinking suffixes              │   │
+│  │  - Forwards to CLIProxyAPIPlus on port 8318                 │   │
 │  └─────────────────────────────────────────────────────────────┘   │
-│                                      │                               │
+│                                      │                             │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                 CLIProxyAPIPlus (Go binary)                   │   │
-│  │  - OpenAI-compatible API                                      │   │
-│  │  - OAuth token management                                     │   │
-│  │  - Provider routing                                           │   │
+│  │                 CLIProxyAPIPlus (Go binary)                 │   │
+│  │  - OpenAI-compatible API                                    │   │
+│  │  - OAuth token management                                   │   │
+│  │  - Provider routing                                         │   │
 │  └─────────────────────────────────────────────────────────────┘   │
-│                                      │                               │
-│                            Model Router                              │
-│                                      │                               │
+│                                      │                             │
+│                            Model Router                            │
+│                                      │                             │
 │  ┌─────────┬─────────┬─────────┬─────────┬─────────┬───────────┐   │
 │  │Anthropic│ OpenAI  │ Google  │ Copilot │  xAI    │   Qwen    │   │
 │  │ Direct  │ Direct  │ Direct  │  Proxy  │         │           │   │
@@ -93,7 +93,7 @@ VibeProxy is an OAuth proxy server that bridges AI subscription services (Claude
         │         │         │         │         │          │
         ▼         ▼         ▼         ▼         ▼          ▼
    ┌─────────────────────────────────────────────────────────────┐
-   │                     AI Provider APIs                         │
+   │                     AI Provider APIs                        │
    │  Anthropic API  OpenAI API  Google AI  GitHub Copilot  Etc. │
    └─────────────────────────────────────────────────────────────┘
 ```

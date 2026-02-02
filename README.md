@@ -146,7 +146,7 @@ See [docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md](docs/VIBEPROXY-LLM-INTEGRATION-GUI
 ## 🎓 How It Works
 
 ```
-┌─────────────┐         SSH Tunnel          ┌─────────────┐
+┌─────────────┐         SSH Tunnel           ┌─────────────┐
 │   Windows   │←─────────────────────────────│   MacBook   │
 │             │  localhost:8317              │             │
 │  Factory    │  ← port forward →            │  VibeProxy  │

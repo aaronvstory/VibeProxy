@@ -35,3 +35,8 @@ vibeproxy-config.json
 # Archive folder (local cleanup, not committed)
 .archive/
 misc/
+
+# Claude Code / DeepWiki
+.claude/
+.history/
+# DeepWiki Q&A with Code Context for Rep.ps1
