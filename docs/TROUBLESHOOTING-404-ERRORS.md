@@ -17,7 +17,7 @@ If you're getting 404 errors with 0 API time and $0.00 cost, the issue is almost
 **Problem:** Using model IDs that don't exist in VibeProxy.
 
 **Examples of INVALID model IDs:**
-```
+```text
 gemini-claude-sonnet-4-5-thinking    # Mixed provider names - doesn't exist
 anthropic/claude-opus-4-5            # Provider prefix format not supported
 claude-opus-4.5                      # Missing date suffix for direct API
@@ -25,7 +25,7 @@ gpt5-codex                           # Wrong format (missing dot)
 ```
 
 **Examples of VALID model IDs:**
-```
+```text
 claude-opus-4-5-20251101             # Anthropic direct API (with date)
 claude-sonnet-4-5-20250929           # Anthropic direct API (with date)
 claude-haiku-4-5-20251001            # Anthropic direct API (with date)
@@ -39,14 +39,14 @@ gemini-3-flash-preview               # Google Gemini
 **Problem:** Incorrect format for Claude's extended thinking mode.
 
 **WRONG:**
-```
+```text
 gemini-claude-sonnet-4-5-thinking    # Invalid - mixed providers
 claude-sonnet-thinking               # Invalid - missing date and token budget
 claude-sonnet-4-5-thinking           # Invalid - missing date suffix
 ```
 
 **CORRECT:**
-```
+```text
 claude-sonnet-4-5-20250929-thinking-5000    # Base model + -thinking- + token budget
 claude-opus-4-5-20251101-thinking-10000     # Works with any Claude model
 ```
@@ -58,14 +58,14 @@ The format is: `<base-model-id>-thinking-<token-budget>`
 **Problem:** Using `provider/model` format (common in OpenRouter) which VibeProxy doesn't support.
 
 **WRONG:**
-```
+```text
 anthropic/claude-opus-4-5
 openai/gpt-5.2-codex
 google/gemini-3-pro
 ```
 
 **CORRECT:**
-```
+```text
 claude-opus-4-5-20251101
 gpt-5.2-codex
 gemini-3-pro-preview
@@ -109,7 +109,7 @@ $models.data | ForEach-Object { $_.id }
 ```
 
 **Sample Output:**
-```
+```text
 "claude-opus-4-5-20251101"
 "claude-sonnet-4-5-20250929"
 "claude-haiku-4-5-20251001"
@@ -182,6 +182,8 @@ Then select `[8] Setup Diagnostics` which tests:
 
 ## Model ID Reference
 
+> **Note:** The `/v1/models` endpoint is the canonical source of truth for available models. The tables below are provided as a quick reference but may not reflect the latest models. Always query the endpoint for the most up-to-date list.
+
 ### Claude Models (Anthropic Direct API)
 
 These require the date suffix for direct API access:
@@ -217,6 +219,7 @@ These work without date suffix when routed through Copilot:
 | `gpt-5.1-codex-mini` | GPT-5.1 Codex Mini |
 | `gpt-5.1` | GPT-5.1 |
 | `gpt-5-codex` | GPT-5 Codex |
+| `gpt-5-codex-mini` | GPT-5 Codex Mini |
 | `gpt-5-mini` | GPT-5 Mini |
 | `gpt-5` | GPT-5 |
 | `gpt-4.1` | GPT-4.1 |
@@ -232,13 +235,21 @@ These work without date suffix when routed through Copilot:
 | `gemini-2.5-flash` | Gemini 2.5 Flash |
 | `gemini-2.5-flash-lite` | Gemini 2.5 Flash Lite |
 
+### Other Providers
+
+| Model ID | Description |
+|----------|-------------|
+| `grok-code-fast-1` | Grok Code Fast (Code-optimized) |
+| `qwen3-coder-plus` | Qwen3 Coder Plus (Coding model) |
+| `qwen3-coder-flash` | Qwen3 Coder Flash (Fast coding) |
+
 ---
 
 ## Extended Thinking Mode
 
 To enable Claude's extended thinking, append `-thinking-<tokens>` to a valid Claude model ID:
 
-```
+```text
 claude-sonnet-4-5-20250929-thinking-5000
 claude-opus-4-5-20251101-thinking-10000
 ```
@@ -266,7 +277,7 @@ When configuring external applications to use VibeProxy:
 
 Use `host.docker.internal` instead of `localhost`:
 
-```
+```text
 http://host.docker.internal:8317/v1
 ```
 
