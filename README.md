@@ -105,6 +105,7 @@ droid
 - Connection refused → SSH tunnel not running
 - Unauthorized → Check VibeProxy provider status on Mac
 - Wrong IP → Verify Mac IP with `ipconfig getifaddr en0`
+- **404 errors** → Invalid model ID. See [docs/TROUBLESHOOTING-404-ERRORS.md](docs/TROUBLESHOOTING-404-ERRORS.md)
 
 See [docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md](docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md) for detailed troubleshooting.
 
@@ -163,6 +164,7 @@ See [docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md](docs/VIBEPROXY-LLM-INTEGRATION-GUI
 1. **First time?** → [docs/VIBEPROXY-QUICKSTART.md](docs/VIBEPROXY-QUICKSTART.md)
 2. **Full reference** → [docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md](docs/VIBEPROXY-LLM-INTEGRATION-GUIDE.md)
 3. **A0 Issues?** → [docs/A0-VIBEPROXY-FIXES.md](docs/A0-VIBEPROXY-FIXES.md)
+4. **404 Errors?** → [docs/TROUBLESHOOTING-404-ERRORS.md](docs/TROUBLESHOOTING-404-ERRORS.md)
 
 ---
 
